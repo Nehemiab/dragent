@@ -48,6 +48,7 @@ def fetch_typhoon_multimodal_data(
         }
     """
     # 创建缓存目录
+    global cache_dir
     cache_dir = os.path.join(cache_root, typhoon_id)
     os.makedirs(cache_dir, exist_ok=True)
     print(f"数据将保存到: {cache_dir}")
@@ -73,9 +74,9 @@ def fetch_typhoon_multimodal_data(
     if 'space' in data_types:
         try:
             print("获取空基数据...")
-            multimodal_data['space']['optical'] = fetch_satellite_optical(typhoon_id, bbox, time_range, cache_dir)
-            multimodal_data['space']['sar'] = fetch_satellite_sar(typhoon_id, bbox, time_range, cache_dir)
-            multimodal_data['space']['infrared'] = fetch_satellite_infrared(typhoon_id, bbox, time_range, cache_dir)
+            multimodal_data['space']['optical'] = fetch_satellite_optical(typhoon_id, bbox, time_range)
+            multimodal_data['space']['sar'] = fetch_satellite_sar(typhoon_id, bbox, time_range)
+            multimodal_data['space']['infrared'] = fetch_satellite_infrared(typhoon_id, bbox, time_range)
         except Exception as e:
             print(f"空基数据获取失败: {str(e)}")
     
@@ -83,8 +84,8 @@ def fetch_typhoon_multimodal_data(
     if 'sky' in data_types:
         try:
             print("获取天基数据...")
-            multimodal_data['sky']['weather'] = fetch_weather_data(bbox, time_range,cache_dir)
-            multimodal_data['sky']['hydrology'] = fetch_hydrology_data(bbox, time_range,cache_dir)
+            multimodal_data['sky']['weather'] = fetch_weather_data(bbox, time_range)
+            multimodal_data['sky']['hydrology'] = fetch_hydrology_data(bbox, time_range)
         except Exception as e:
             print(f"天基数据获取失败: {str(e)}")
     
@@ -92,8 +93,8 @@ def fetch_typhoon_multimodal_data(
     if 'ground' in data_types:
         try:
             print("获取地基数据...")
-            multimodal_data['ground']['uav_images'] = fetch_uav_images(bbox, time_range, cache_dir)
-            multimodal_data['ground']['field_reports'] = fetch_field_reports(bbox, time_range,cache_dir)
+            multimodal_data['ground']['uav_images'] = fetch_uav_images(bbox, time_range)
+            multimodal_data['ground']['field_reports'] = fetch_field_reports(bbox, time_range)
         except Exception as e:
             print(f"地基数据获取失败: {str(e)}")
     
@@ -101,8 +102,8 @@ def fetch_typhoon_multimodal_data(
     if 'human' in data_types:
         try:
             print("获取人基数据...")
-            multimodal_data['human']['social_media'] = fetch_social_media(typhoon_id, bbox, time_range,cache_dir) 
-            multimodal_data['human']['public_reports'] = fetch_public_reports(typhoon_id, bbox, time_range,cache_dir)
+            multimodal_data['human']['social_media'] = fetch_social_media(typhoon_id, bbox, time_range) 
+            multimodal_data['human']['public_reports'] = fetch_public_reports(typhoon_id, bbox, time_range)
         except Exception as e:
             print(f"人基数据获取失败: {str(e)}")
     
@@ -110,15 +111,15 @@ def fetch_typhoon_multimodal_data(
     if 'network' in data_types:
         try:
             print("获取网基数据...")
-            multimodal_data['network']['power_grid'] = fetch_power_grid_status(bbox,cache_dir)
-            multimodal_data['network']['traffic'] = fetch_traffic_data(bbox, time_range,cache_dir)
+            multimodal_data['network']['power_grid'] = fetch_power_grid_status(bbox)
+            multimodal_data['network']['traffic'] = fetch_traffic_data(bbox, time_range)
         except Exception as e:
             print(f"网基数据获取失败: {str(e)}")
     
     return multimodal_data
 
 # 数据获取子函数
-def fetch_satellite_optical(typhoon_id, bbox, time_range, cache_dir):
+def fetch_satellite_optical(typhoon_id, bbox, time_range):
     """模拟获取光学卫星影像"""
     # 在实际项目中这里会下载真实图像
     # 这里创建模拟文件路径
@@ -131,7 +132,7 @@ def fetch_satellite_optical(typhoon_id, bbox, time_range, cache_dir):
     print(f"创建模拟光学图像: {save_path}")
     return save_path
 
-def fetch_satellite_sar(typhoon_id, bbox, time_range, cache_dir):
+def fetch_satellite_sar(typhoon_id, bbox, time_range):
     """模拟获取合成孔径雷达影像"""
     # 在实际项目中这里会下载真实图像
     # 这里创建模拟文件路径
@@ -144,7 +145,7 @@ def fetch_satellite_sar(typhoon_id, bbox, time_range, cache_dir):
     print(f"创建模拟SAR图像: {save_path}")
     return save_path
 
-def fetch_satellite_infrared(typhoon_id, bbox, time_range, cache_dir):
+def fetch_satellite_infrared(typhoon_id, bbox, time_range):
     """模拟获取红外卫星影像"""
     # 在实际项目中这里会下载真实图像
     # 这里创建模拟文件路径
@@ -175,7 +176,7 @@ def fetch_hydrology_data(bbox, time_range):
     print(f"获取水文传感器数据，区域: {bbox}, 时间范围: {time_range}")
     return hydrology_data
 
-def fetch_uav_images(bbox, time_range, cache_dir):
+def fetch_uav_images(bbox, time_range):
     """
     获取无人机图像
     """
@@ -239,7 +240,7 @@ def fetch_public_reports(typhoon_id, bbox, time_range):
     
     return public_reports
 
-def fetch_traffic_data(bbox, time_range, cache_dir):
+def fetch_traffic_data(bbox, time_range):
     """
     获取交通状况数据
     """
