@@ -1,7 +1,9 @@
 import requests
+import pandas as pd
 import geopandas as gpd
 from datetime import datetime, timedelta
 import os
+import config
 
 def fetch_typhoon_multimodal_data(
     typhoon_id: str, 
@@ -29,7 +31,7 @@ def fetch_typhoon_multimodal_data(
                 "infrared": GeoDataFrame/文件路径  # 红外卫星影像
             },
             "sky": {    # 天基数据 (气象/水文传感器)
-                "weather": DataFrame,       # 气象站数据
+                "weather": DataFrame,       # 气象站数据(过去3天到未来7天每小时温度,降水量,相对湿度,气压,风速风级风向)
                 "hydrology": DataFrame      # 水文传感器数据
             },
             "ground": { # 地基数据 (地面观测)
@@ -103,7 +105,7 @@ def fetch_typhoon_multimodal_data(
         try:
             print("获取人基数据...")
             multimodal_data['human']['social_media'] = fetch_social_media(typhoon_id, bbox, time_range)
-            multimodal_data['human']['density_of_population'] = fetch_density_of_population(typhoon_id, bbox, time_range)
+            # multimodal_data['human']['density_of_population'] = fetch_density_of_population(typhoon_id, bbox, time_range)
         except Exception as e:
             print(f"人基数据获取失败: {str(e)}")
     
@@ -147,6 +149,7 @@ def fetch_satellite_sar(typhoon_id, bbox, time_range):
     return save_path
 
 def fetch_satellite_infrared(typhoon_id, bbox, time_range):
+
     """模拟获取红外卫星影像"""
     # 在实际项目中这里会下载真实图像
     # 这里创建模拟文件路径
@@ -159,14 +162,67 @@ def fetch_satellite_infrared(typhoon_id, bbox, time_range):
     print(f"创建模拟红外图像: {save_path}")
     return save_path
 
+    # 添加风力等级（蒲福风级）
+
+def calculate_beaufort(wind_speed):
+    if wind_speed < 0.3: return 0
+    elif wind_speed < 1.6: return 1
+    elif wind_speed < 3.4: return 2
+    elif wind_speed < 5.5: return 3
+    elif wind_speed < 8.0: return 4
+    elif wind_speed < 10.8: return 5
+    elif wind_speed < 13.9: return 6
+    elif wind_speed < 17.2: return 7
+    elif wind_speed < 20.8: return 8
+    elif wind_speed < 24.5: return 9
+    elif wind_speed < 28.5: return 10
+    elif wind_speed < 32.7: return 11
+    else: return 12
+
 def fetch_weather_data(bbox, time_range):
-    """
-    获取气象站数据
-    """
-    # 模拟获取气象站数据
-    weather_data = []  # 这里应该是实际的气象数据列表
-    print(f"获取气象站数据，区域: {bbox}, 时间范围: {time_range}")
-    return weather_data
+    latitude = (bbox[1] + bbox[3]) / 2
+    longitude = (bbox[0] + bbox[2]) / 2
+    print(f"获取气象数据，区域: {bbox}, 时间范围: {time_range}, 中心点: ({latitude}, {longitude})")
+    hourly_params = "temperature_2m,precipitation,relativehumidity_2m,pressure_msl,windspeed_10m,winddirection_10m"
+    
+    #API请求URL
+    url = config.URLS['weather']
+    params = {
+        'latitude': latitude,   # 纬度
+        'longitude': longitude, # 经度
+        'hourly': hourly_params, # 小时数据参数
+        'past_days': 3, # 获取过去3天的数据
+        'timezone': 'auto' # 时区设置
+    }
+
+    # 发送API请求
+    response = requests.get(url, params=params)
+    if response.status_code != 200:
+        raise Exception(f"API请求失败: {response.status_code}")
+
+    # 解析JSON数据
+    data = response.json()
+    hourly_data = data.get("hourly", {})
+
+    # 转换为DataFrame
+    df = pd.DataFrame({
+        "time": pd.to_datetime(hourly_data["time"]),
+        "temperature_2m": hourly_data["temperature_2m"],
+        "precipitation": hourly_data["precipitation"],
+        "relativehumidity_2m": hourly_data["relativehumidity_2m"],
+        "pressure_msl": hourly_data["pressure_msl"],
+        "windspeed_10m": hourly_data["windspeed_10m"],
+        "winddirection_10m": hourly_data["winddirection_10m"]
+    })
+
+    df["beaufort_scale"] = df["windspeed_10m"].apply(calculate_beaufort)
+
+    # 保存文件（包含日期时间）
+    save_path = os.path.join(cache_dir, f"weather_{latitude}_{longitude}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv")
+    df.to_csv(save_path, index=False)
+    print(f"天气数据已保存至: {save_path}")
+    print(f"共获取 {len(df)} 条记录，时间范围: {df['time'].min()} 至 {df['time'].max()}")
+
 
 def fetch_hydrology_data(bbox, time_range):
     """
@@ -193,7 +249,6 @@ def fetch_uav_images(bbox, time_range):
         uav_images.append(image_path)
     
     return uav_images
-    
 
 def fetch_field_reports(bbox, time_range):
     """
@@ -240,11 +295,11 @@ def fetch_social_media(typhoon_id, bbox, time_range):
     })
     
     return social_media_data
-
+"""
 def fetch_density_of_population(typhoon_id, bbox, time_range):
-    """
+    
     获取人口密度数据
-    """
+    
     # 模拟获取人口密度数据
     density_data = []  # 这里应该是实际的人口密度数据列表
     print(f"获取人口密度数据，台风ID: {typhoon_id}, 区域: {bbox}, 时间范围: {time_range}")
@@ -258,7 +313,7 @@ def fetch_density_of_population(typhoon_id, bbox, time_range):
     })
 
     return density_data
-
+"""
 def fetch_traffic_data(bbox, time_range):
     """
     获取交通状况数据
@@ -275,7 +330,6 @@ def fetch_traffic_data(bbox, time_range):
         traffic_data.append(traffic_path)
     
     return traffic_data
-
 
 def fetch_power_grid_status(bbox):
     """
