@@ -36,9 +36,9 @@ def fetch_typhoon_multimodal_data(
                 "uav_images": list,      # 无人机图像路径列表
                 "field_reports": dict    # 现场报告数据
             },
-            "human": {  # 人基数据 (社交媒体/公众上报)
-                "social_media": DataFrame,    # 微博
-                "public_reports": DataFrame   # 公众上报数据
+            "human": {  # 人基数据 (社交媒体/人口密度)
+                "social_media": DataFrame,    # 社交媒体数据
+                "density_of_population": DataFrame   # 人口密度数据
             },
             "network": { # 网基数据 (基础设施)
                 "power_grid": GeoDataFrame,    # 电网状态
@@ -98,12 +98,12 @@ def fetch_typhoon_multimodal_data(
         except Exception as e:
             print(f"地基数据获取失败: {str(e)}")
     
-    # 4. 人基数据获取 (社交媒体/公众上报)
+    # 4. 人基数据获取 (社交媒体/人口密度)
     if 'human' in data_types:
         try:
             print("获取人基数据...")
-            multimodal_data['human']['social_media'] = fetch_social_media(typhoon_id, bbox, time_range) 
-            multimodal_data['human']['public_reports'] = fetch_public_reports(typhoon_id, bbox, time_range)
+            multimodal_data['human']['social_media'] = fetch_social_media(typhoon_id, bbox, time_range)
+            multimodal_data['human']['density_of_population'] = fetch_density_of_population(typhoon_id, bbox, time_range)
         except Exception as e:
             print(f"人基数据获取失败: {str(e)}")
     
@@ -113,6 +113,7 @@ def fetch_typhoon_multimodal_data(
             print("获取网基数据...")
             multimodal_data['network']['power_grid'] = fetch_power_grid_status(bbox)
             multimodal_data['network']['traffic'] = fetch_traffic_data(bbox, time_range)
+            multimodal_data['network']['communication'] = fetch_communication_data(bbox, time_range)  
         except Exception as e:
             print(f"网基数据获取失败: {str(e)}")
     
@@ -216,47 +217,6 @@ def fetch_field_reports(bbox, time_range):
     
     return field_reports
 
-def fetch_public_reports(typhoon_id, bbox, time_range):
-    """
-    获取公众上报数据
-    """
-    # 模拟获取公众上报数据
-    public_reports = []  # 这里应该是实际的公众上报数据列表
-    print(f"获取公众上报数据，台风ID: {typhoon_id}, 区域: {bbox}, 时间范围: {time_range}")
-    
-    # 模拟创建一些上报
-    public_reports.append({
-        'id': 'report_1',
-        'location': bbox,
-        'time': time_range[0],
-        'content': '模拟公众上报内容 1'
-    })
-    public_reports.append({
-        'id': 'report_2',
-        'location': bbox,
-        'time': time_range[1],
-        'content': '模拟公众上报内容 2'
-    })
-    
-    return public_reports
-
-def fetch_traffic_data(bbox, time_range):
-    """
-    获取交通状况数据
-    """
-    # 模拟获取交通状况数据
-    traffic_data = []  # 这里应该是实际的交通数据列表
-    print(f"获取交通状况数据，区域: {bbox}, 时间范围: {time_range}")
-    
-    # 模拟创建一些交通数据文件
-    for i in range(3):
-        traffic_path = os.path.join(cache_dir, f"traffic_data_{i}.json")
-        with open(traffic_path, 'w') as f:
-            f.write(f"{{'id': 'traffic_{i}', 'status': 'normal', 'bbox': {bbox}}}")
-        traffic_data.append(traffic_path)
-    
-    return traffic_data
-
 def fetch_social_media(typhoon_id, bbox, time_range):
     """
     获取社交媒体数据
@@ -281,6 +241,42 @@ def fetch_social_media(typhoon_id, bbox, time_range):
     
     return social_media_data
 
+def fetch_density_of_population(typhoon_id, bbox, time_range):
+    """
+    获取人口密度数据
+    """
+    # 模拟获取人口密度数据
+    density_data = []  # 这里应该是实际的人口密度数据列表
+    print(f"获取人口密度数据，台风ID: {typhoon_id}, 区域: {bbox}, 时间范围: {time_range}")
+
+    # 模拟创建一些人口密度数据
+    density_data.append({
+        'id': 'density_1',
+        'location': bbox,
+        'time': time_range[0],
+        'density': 1000  # 模拟人口密度值
+    })
+
+    return density_data
+
+def fetch_traffic_data(bbox, time_range):
+    """
+    获取交通状况数据
+    """
+    # 模拟获取交通状况数据
+    traffic_data = []  # 这里应该是实际的交通数据列表
+    print(f"获取交通状况数据，区域: {bbox}, 时间范围: {time_range}")
+    
+    # 模拟创建一些交通数据文件
+    for i in range(3):
+        traffic_path = os.path.join(cache_dir, f"traffic_data_{i}.json")
+        with open(traffic_path, 'w') as f:
+            f.write(f"{{'id': 'traffic_{i}', 'status': 'normal', 'bbox': {bbox}}}")
+        traffic_data.append(traffic_path)
+    
+    return traffic_data
+
+
 def fetch_power_grid_status(bbox):
     """
     获取电网状态数据
@@ -295,3 +291,18 @@ def fetch_power_grid_status(bbox):
     power_grid_data['geometry'] = [gpd.points_from_xy([bbox[0]], [bbox[1]]), gpd.points_from_xy([bbox[2]], [bbox[3]])]
     
     return power_grid_data
+
+def fetch_communication_data(bbox, time_range):
+    """
+    获取通信网络状态数据
+    """
+    # 模拟获取通信网络状态数据
+    communication_data = gpd.GeoDataFrame()  # 这里应该是实际的通信网络状态数据
+    print(f"获取通信网络状态数据，区域: {bbox}, 时间范围: {time_range}")
+    
+    # 模拟创建一些通信网络状态数据
+    communication_data['id'] = ['comm_1', 'comm_2']
+    communication_data['status'] = ['operational', 'disrupted']
+    communication_data['geometry'] = [gpd.points_from_xy([bbox[0]], [bbox[1]]), gpd.points_from_xy([bbox[2]], [bbox[3]])]
+    
+    return communication_data
