@@ -77,7 +77,7 @@ def fetch_typhoon_multimodal_data(
         try:
             print("获取空基数据...")
             multimodal_data['space']['optical'] = fetch_satellite_optical(typhoon_id, bbox, time_range)
-            multimodal_data['space']['sar'] = fetch_satellite_sar(typhoon_id, bbox, time_range)
+            # multimodal_data['space']['sar'] = fetch_satellite_sar(typhoon_id, bbox, time_range)
             multimodal_data['space']['infrared'] = fetch_satellite_infrared(typhoon_id, bbox, time_range)
         except Exception as e:
             print(f"空基数据获取失败: {str(e)}")
@@ -87,7 +87,7 @@ def fetch_typhoon_multimodal_data(
         try:
             print("获取天基数据...")
             multimodal_data['sky']['weather'] = fetch_weather_data(bbox, time_range)
-            multimodal_data['sky']['hydrology'] = fetch_hydrology_data(bbox, time_range)
+            # multimodal_data['sky']['hydrology'] = fetch_hydrology_data(bbox, time_range)
         except Exception as e:
             print(f"天基数据获取失败: {str(e)}")
     
@@ -95,7 +95,7 @@ def fetch_typhoon_multimodal_data(
     if 'ground' in data_types:
         try:
             print("获取地基数据...")
-            multimodal_data['ground']['uav_images'] = fetch_uav_images(bbox, time_range)
+            # multimodal_data['ground']['uav_images'] = fetch_uav_images(bbox, time_range)
             multimodal_data['ground']['field_reports'] = fetch_field_reports(bbox, time_range)
         except Exception as e:
             print(f"地基数据获取失败: {str(e)}")
@@ -114,7 +114,7 @@ def fetch_typhoon_multimodal_data(
         try:
             print("获取网基数据...")
             multimodal_data['network']['power_grid'] = fetch_power_grid_status(bbox)
-            multimodal_data['network']['traffic'] = fetch_traffic_data(bbox, time_range)
+            # multimodal_data['network']['traffic'] = fetch_traffic_data(bbox, time_range)
             multimodal_data['network']['communication'] = fetch_communication_data(bbox, time_range)  
         except Exception as e:
             print(f"网基数据获取失败: {str(e)}")
@@ -135,6 +135,7 @@ def fetch_satellite_optical(typhoon_id, bbox, time_range):
     print(f"创建模拟光学图像: {save_path}")
     return save_path
 
+'''
 def fetch_satellite_sar(typhoon_id, bbox, time_range):
     """模拟获取合成孔径雷达影像"""
     # 在实际项目中这里会下载真实图像
@@ -147,6 +148,7 @@ def fetch_satellite_sar(typhoon_id, bbox, time_range):
     
     print(f"创建模拟SAR图像: {save_path}")
     return save_path
+'''
 
 def fetch_satellite_infrared(typhoon_id, bbox, time_range):
 
@@ -162,8 +164,7 @@ def fetch_satellite_infrared(typhoon_id, bbox, time_range):
     print(f"创建模拟红外图像: {save_path}")
     return save_path
 
-    # 添加风力等级（蒲福风级）
-
+# 添加风力等级（蒲福风级）
 def calculate_beaufort(wind_speed):
     if wind_speed < 0.3: return 0
     elif wind_speed < 1.6: return 1
@@ -229,6 +230,7 @@ def fetch_weather_data(bbox, time_range):
     print(f"共获取 {len(df)} 条记录，时间范围: {df['time'].min()} 至 {df['time'].max()}")
 
 
+'''
 def fetch_hydrology_data(bbox, time_range):
     """
     获取水文传感器数据
@@ -237,7 +239,9 @@ def fetch_hydrology_data(bbox, time_range):
     hydrology_data = []  # 这里应该是实际的水文数据列表
     print(f"获取水文传感器数据，区域: {bbox}, 时间范围: {time_range}")
     return hydrology_data
+'''
 
+'''
 def fetch_uav_images(bbox, time_range):
     """
     获取无人机图像
@@ -254,6 +258,7 @@ def fetch_uav_images(bbox, time_range):
         uav_images.append(image_path)
     
     return uav_images
+'''
 
 def fetch_field_reports(bbox, time_range):
     """
@@ -319,6 +324,7 @@ def fetch_density_of_population(typhoon_id, bbox, time_range):
 
     return density_data
 """
+'''
 def fetch_traffic_data(bbox, time_range):
     """
     获取交通状况数据
@@ -335,6 +341,7 @@ def fetch_traffic_data(bbox, time_range):
         traffic_data.append(traffic_path)
     
     return traffic_data
+'''
 
 def fetch_power_grid_status(bbox):
     """
