@@ -185,13 +185,18 @@ def fetch_weather_data(bbox, time_range):
     print(f"获取气象数据，区域: {bbox}, 时间范围: {time_range}, 中心点: ({latitude}, {longitude})")
     hourly_params = "temperature_2m,precipitation,relativehumidity_2m,pressure_msl,windspeed_10m,winddirection_10m"
     
+    end_date = time_range[1][:10]
+    end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+    new_end_date = (end_date + timedelta(days=7)).strftime('%Y-%m-%d')
+
     #API请求URL
     url = config.URLS['weather']
     params = {
         'latitude': latitude,   # 纬度
         'longitude': longitude, # 经度
         'hourly': hourly_params, # 小时数据参数
-        'past_days': 3, # 获取过去3天的数据
+        "start_date": time_range[0][:10],     
+        "end_date": new_end_date,
         'timezone': 'auto' # 时区设置
     }
 
