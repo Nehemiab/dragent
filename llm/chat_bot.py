@@ -1,19 +1,11 @@
 from typing import Annotated
-import yaml
 from typing_extensions import TypedDict
 from IPython.display import Image, display
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
-import os
-from langchain_openai import ChatOpenAI
+import Client
 
-with open("../config.yaml", "r") as f:
-    config = yaml.safe_load(f)
-os.environ["MODEL"]= config["model"]
-os.environ["API_KEY"] = config["api_key"]
-os.environ["BASE_URL"] = config["base_url"]
-llm = ChatOpenAI(model = os.environ["MODEL"],api_key = os.environ["API_KEY"],base_url = os.environ["BASE_URL"],stream_usage=True)
-
+llm= Client.LLMClient()
 
 
 class State(TypedDict):
