@@ -1,2 +1,4 @@
-kimi_api_key: "your_api_key_here"
-model: "moonshot-v1-8k"
+api_type: 'openai'
+base_url: 'https://api.siliconflow.cn/v1'
+api_key: 'sk-subycmgwfemogvrfesrywtbtuuszhkibgnmuekpdvwojanyc'
+model: 'THUDM/GLM-Z1-9B-0414'

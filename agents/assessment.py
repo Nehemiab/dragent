@@ -1,11 +1,11 @@
-from kimi.client import KimiAI
+import llm.Client
 import json
 from typing import Dict, Any
 
 
 class AssessmentAgent:
     def __init__(self):
-        self.kimi = KimiAI()
+        self.llm = llm.Client.LLMClient()
 
     async def execute(self, state: Dict[str, Any]) -> Dict[str, Any]:
         prompt = f"""作为住建部灾害评估专家，请分析以下房屋损毁情况：
@@ -31,7 +31,7 @@ class AssessmentAgent:
         }}"""
 
         try:
-            analysis = await self.kimi.analyze_json(prompt)
+            analysis = await self.llm.analyze_json(prompt)
             assessment = json.loads(analysis)
 
             return {

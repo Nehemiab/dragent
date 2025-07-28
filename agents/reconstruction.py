@@ -1,11 +1,11 @@
-from kimi.client import KimiAI
+import llm.Client
 import json
 from typing import Dict, Any
 
 
 class ReconstructionAgent:
     def __init__(self):
-        self.kimi = KimiAI()
+        self.llm = llm.Client.LLMClient()
 
     async def execute(self, state: Dict[str, Any]) -> Dict[str, Any]:
         prompt = f"""作为国家发改委重建规划专家，请制定：
@@ -42,7 +42,7 @@ class ReconstructionAgent:
         }}"""
 
         try:
-            plan = await self.kimi.analyze_json(prompt)
+            plan = await self.llm.analyze_json(prompt)
             reconstruction = json.loads(plan)
 
             return {
