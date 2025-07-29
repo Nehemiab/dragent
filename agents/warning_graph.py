@@ -116,10 +116,10 @@ def analysis_node(state):
     result = analysis_agent.invoke(state)
 
     # 确保结果是AIMessage
-    if isinstance(result, AIMessage):
-        result.name = "analyst"
+    if not isinstance(result, AIMessage):
+        result = AIMessage(content=str(result), name="analyst")
     else:
-        result = AIMessage(**result.dict(exclude={"type"}), name="analyst")
+        result = AIMessage(content=result.content, name="analyst")
 
     return {"messages": [result]}
 
@@ -158,7 +158,8 @@ def run_typhoon_alert(location):
 
     # 返回最终分析结果
     for message in results["messages"]:
-        if message.name == "analyst":
+        print(f"[DEBUG] message.name = {getattr(message, 'name', None)}")
+        if getattr(message, "name", None) == "analyst":
             return message.content
     return "未生成有效预警方案"
 
