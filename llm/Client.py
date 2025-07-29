@@ -42,7 +42,7 @@ class LLMClient:
         return getattr(self._llm, name)
 
     def __call__(self, *args, **kwargs):
-        return self._llm(*args, **kwargs)
+        return self._llm.invoke(*args, **kwargs)
 
 
 if __name__ == "__main__":
