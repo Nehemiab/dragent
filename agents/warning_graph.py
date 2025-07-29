@@ -24,7 +24,7 @@ def typhoon_api(location: Annotated[str, "要查询台风信息的地区名称"]
     # 这里应该是调用真实API的代码，以下是模拟数据
     return {
         "location": location,
-        "typhoon_name": "台风山猫",
+        "typhoon_name": "台风山竹",
         "wind_speed": "35m/s",
         "predicted_path": "正向西北方向移动",
         "arrival_time": "预计24小时后影响该地区",
@@ -116,12 +116,12 @@ def analysis_node(state):
     result = analysis_agent.invoke(state)
 
     # 确保结果是AIMessage
-    if not isinstance(result, AIMessage):
-        result = AIMessage(**result.dict(exclude={"type", "name"}), name="analyst")
+    if isinstance(result, AIMessage):
+        result.name = "analyst"
+    else:
+        result = AIMessage(**result.dict(exclude={"type"}), name="analyst")
 
-    return {
-        "messages": [result]
-    }
+    return {"messages": [result]}
 
 
 # 4. 构建工作流图
@@ -154,7 +154,6 @@ def run_typhoon_alert(location):
     # 运行图
     results = graph.invoke({
         "messages": [initial_message],
-        "sender": "user"
     })
 
     # 返回最终分析结果
