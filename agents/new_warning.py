@@ -1,5 +1,6 @@
 from typing import Annotated, Sequence, TypedDict, Literal
 import operator
+import asyncio
 import functools
 
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
@@ -7,6 +8,7 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.tools import tool
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode   # 官方预置工具节点
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver #检查点
 
 # 假设的 LLM 客户端
 import llm.Client
@@ -157,32 +159,37 @@ workflow.add_conditional_edges(
 # tool_node 的返回边：始终回到调用它的节点
 workflow.add_edge("tool_node", "analyst")
 
-# 编译
-graph = workflow.compile()
 
-# -------------------------------------------------
-# 7. 运行入口
-# -------------------------------------------------
-def run_typhoon_alert(location: str):
-    """运行台风预警系统"""
+# 7. 运行入口（改为 async + 使用检查点）
+# ----------------------------------------------------------
+async def run_typhoon_alert(location: str, thread_id: str = "thread-typhoon-1"):
+    """异步运行台风预警系统，带检查点持久化"""
     initial = {
         "messages": [HumanMessage(content=location)],
         "sender": "analyst"
     }
-    final_state = graph.invoke(initial)
-    # 找最后一条来自 analyst 的消息作为结果
-    for msg in reversed(final_state["messages"]):
-        if isinstance(msg, AIMessage) and msg.name == "analyst":
-            return msg.content
-    return "未生成有效预警方案"
+# 使用 AsyncSqliteSaver，数据库文件 checkpoints.db 会自动创建
+    async with AsyncSqliteSaver.from_conn_string("checkpoints.db") as memory:
+        graph = workflow.compile(checkpointer=memory)
+        final_state = await graph.ainvoke(
+            initial,
+            {"configurable": {"thread_id": thread_id}}
+        )
+        # 取出最后一条来自 analyst 的消息
+        for msg in reversed(final_state["messages"]):
+            if isinstance(msg, AIMessage) and msg.name == "analyst":
+                return msg.content
+        return "未生成有效预警方案"
 
-
-# -------------------------------------------------
-# 8. 示例运行
-# -------------------------------------------------
-if __name__ == "__main__":
+# ----------------------------------------------------------
+# 8. 示例运行（async main）
+# ----------------------------------------------------------
+async def main():
     location = "广东省梅州市"
     print(f"正在为 {location} 生成台风预警方案...\n")
-    result = run_typhoon_alert(location)
+    result = await run_typhoon_alert(location)
     print("生成的预警方案：\n")
     print(result)
+
+if __name__ == "__main__":
+    asyncio.run(main())
