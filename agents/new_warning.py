@@ -27,15 +27,27 @@ class TyphoonAlertState(TypedDict):
 # 2. 工具定义
 # -------------------------------------------------
 @tool
-def typhoon_api(location: Annotated[str, "要查询台风信息的地区名称"]):
-    """获取指定地区的实时台风数据"""
+def typhoon_api(
+    lat: Annotated[float, "纬度，保留一位小数"],
+    lon: Annotated[float, "经度，保留一位小数"]
+) -> dict:
+    """根据经纬度获取台风实时数据"""
+    # 这里可以按 (lat, lon) 去数据库查询
     return {
-        "location": location,
-        "typhoon_name": "台风山竹",
-        "wind_speed": "35 m/s",
-        "predicted_path": "西北方向移动",
-        "arrival_time": "预计24小时后影响该地区",
-        "rainfall_prediction": "24h累积200-300 mm"
+        "台风编号": "202406",
+        "台风中文名称": "台风山竹",
+        "台风英文名称": "Mangkhut",
+        "台风起始时间": "2024-08-10 06:00",
+        "台风结束时间": "2024-08-15 18:00",
+        "当前台风时间": "2024-08-12 12:00",
+        "经度": round(lon, 1),
+        "纬度": round(lat, 1),
+        "台风强度": "强台风级",
+        "台风等级": "TY",
+        "风速": "35 m/s",
+        "气压": "965 hPa",
+        "移动方向": "西北",
+        "移动速度": "20 km/h"
     }
 
 
@@ -50,10 +62,10 @@ tool_node = ToolNode([typhoon_api])
 analysis_prompt = ChatPromptTemplate.from_messages([
     ("system",
      "你是台风灾害预警分析专家。工作流程：\n"
-     "1. 先询问用户需要分析哪个地区。\n"
-     "2. 可随时调用 typhoon_api 获取台风数据。\n"
-     "3. 可向地形-水体专家（flood_agent）索要地形、山体、水体等信息。\n"
-     "4. 当收集到足够信息后，向地形-水体专家说“够了”，并向用户输出完整风险评估、预防方案、疏散建议、物资清单。\n"
+     "1. 先询问用户需要分析哪个地区，并请用户给出具体经纬度（或你在对话中主动把地名解析成经纬度）。\n"
+     "2. 调用 typhoon_api 时，请一定传入两个参数：lat（纬度）、lon（经度），均保留一位小数。\n"
+     "3. 可向地形-水体专家索要地形、水体等信息。\n"
+     "4. 收集足够信息后，对专家说“够了”，并向用户输出完整风险评估、预防方案、疏散建议、物资清单。\n"
      "5. 若数据已充足，在最后一条消息中显式包含 **FINAL ANSWER** 字样结束流程。"),
     MessagesPlaceholder(variable_name="messages")
 ])
