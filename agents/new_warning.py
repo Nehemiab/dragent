@@ -2,6 +2,8 @@ from typing import Annotated, Sequence, TypedDict, Literal
 import operator
 import asyncio
 import functools
+import json
+from datetime import datetime
 
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -9,6 +11,7 @@ from langchain_core.tools import tool
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode   # 官方预置工具节点
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver #检查点
+from tools.data_reader import typhoon_api as _real_typhoon_api
 
 # 假设的 LLM 客户端
 import llm.Client
@@ -32,23 +35,16 @@ def typhoon_api(
     lon: Annotated[float, "经度，保留一位小数"]
 ) -> dict:
     """根据经纬度获取台风实时数据"""
-    # 这里可以按 (lat, lon) 去数据库查询
-    return {
-        "台风编号": "202406",
-        "台风中文名称": "台风山竹",
-        "台风英文名称": "Mangkhut",
-        "台风起始时间": "2024-08-10 06:00",
-        "台风结束时间": "2024-08-15 18:00",
-        "当前台风时间": "2024-08-12 12:00",
-        "经度": round(lon, 1),
-        "纬度": round(lat, 1),
-        "台风强度": "强台风级",
-        "台风等级": "TY",
-        "风速": "35 m/s",
-        "气压": "965 hPa",
-        "移动方向": "西北",
-        "移动速度": "20 km/h"
-    }
+    # 组装成原来函数认识的 JSON 格式
+    payload = json.dumps({
+        "name": "typhoon_api",
+        "arguments": {
+            "latitude": lat,
+            "longitude": lon,
+            "time": datetime.utcnow().strftime('%Y-%m-%d %H:%M')
+        }
+    })
+    return _real_typhoon_api(payload)
 
 
 # 把工具统一放到 ToolNode
