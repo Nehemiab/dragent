@@ -11,7 +11,7 @@ from langchain_core.tools import tool
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode   # 官方预置工具节点
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver #检查点
-from tools.data_reader import typhoon_api as _real_typhoon_api
+from dragent_tools.data_reader import typhoon_api as _real_typhoon_api
 
 # 假设的 LLM 客户端
 import llm.Client
@@ -179,6 +179,11 @@ async def run_typhoon_alert(location: str, thread_id: str = "thread-typhoon-1"):
 # 使用 AsyncSqliteSaver，数据库文件 checkpoints.db 会自动创建
     async with AsyncSqliteSaver.from_conn_string("checkpoints.db") as memory:
         graph = workflow.compile(checkpointer=memory)
+        try:
+            graph.get_graph().draw_mermaid_png(output_file_path="./new_warning.png")
+        except Exception:
+            # This requires some extra dependencies and is optional
+            pass
         final_state = await graph.ainvoke(
             initial,
             {"configurable": {"thread_id": thread_id}}
