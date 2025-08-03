@@ -12,9 +12,9 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 # LLM 客户端
-import llm.Client
-llm = llm.Client.LLMClient()
-Expert_llm = llm.Client.LLMClient(
+import llm.Client as Client
+llm = Client.LLMClient()
+Expert_llm = Client.LLMClient(
     api_key="token-abc123",
     base_url="http://localhost:8888/v1",
     model="/root/MiniCPM-o-2_6"
