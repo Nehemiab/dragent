@@ -1,0 +1,19 @@
+Index: config.yaml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>kimi_api_key: \"your_api_key_here\"\r\nmodel: \"moonshot-v1-8k\"
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/config.yaml b/config.yaml
+--- a/config.yaml	(revision d7b7fd1fec4ab6ccee85a552ea90058ab41d46f6)
++++ b/config.yaml	(date 1752913174013)
+@@ -1,2 +1,4 @@
+-kimi_api_key: "your_api_key_here"
+-model: "moonshot-v1-8k"
+\ No newline at end of file
++api_type: 'openai'
++base_url: 'https://api.siliconflow.cn/v1'
++api_key: 'sk-subycmgwfemogvrfesrywtbtuuszhkibgnmuekpdvwojanyc'
++model: 'THUDM/GLM-Z1-9B-0414'
+\ No newline at end of file
