@@ -1,9 +1,10 @@
-from typing import Annotated, Sequence, TypedDict, Literal
+from typing import Annotated, Sequence, TypedDict, Literal, Tuple
 import operator
 import asyncio
 import functools
 import json
 from datetime import datetime
+from typing_extensions import NotRequired
 
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -11,12 +12,14 @@ from langchain_core.tools import tool
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode   # 官方预置工具节点
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver #检查点
+from openai import api_key, base_url
+
 from dragent_tools.data_reader import typhoon_api as _real_typhoon_api
 
 # 假设的 LLM 客户端
 import llm.Client
 llm = llm.Client.LLMClient()
-
+Expert_llm=llm.Client.LLMClient(api_key="token-abc123",base_url="http://localhost:8888/v1",model="/root/MiniCPM-o-2_6")
 # -------------------------------------------------
 # 1. 状态定义
 # -------------------------------------------------
@@ -24,6 +27,8 @@ class TyphoonAlertState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
     # 用于记录最后一次是谁调用了工具，方便 router 返回
     sender: str
+    # 卫星图只给 flood 节点用，不进入 messages
+    image: NotRequired[bytes]   # 新增：允许缺失
 
 
 # -------------------------------------------------
@@ -50,6 +55,20 @@ def typhoon_api(
 # 把工具统一放到 ToolNode
 tool_node = ToolNode([typhoon_api])
 
+
+def _make_image_message(image_bytes: bytes) -> HumanMessage:
+    # 这里假设传进来的是 PNG/JPG 原始字节
+    import base64
+    b64 = base64.b64encode(image_bytes).decode()
+    # 如果图片很大，可以改成 `data:image/jpeg;base64,` 等
+    url = f"data:image/png;base64,{b64}"
+    return HumanMessage(
+        content=[
+            {"type": "text", "text": "这是当地的卫星图，请据此分析山体、水体、地形等信息。"},
+            {"type": "image_url", "image_url": {"url": url}}
+        ]
+    )
+
 # -------------------------------------------------
 # 3. 代理提示模板
 # -------------------------------------------------
@@ -74,7 +93,7 @@ flood_prompt = ChatPromptTemplate.from_messages([
      "请基于知识库给出尽可能详细的数据与建议，并继续对话，直到对方说“够了”。"),
     MessagesPlaceholder(variable_name="messages")
 ])
-flood_agent = flood_prompt | llm
+flood_agent = flood_prompt | Expert_llm
 
 # -------------------------------------------------
 # 4. 节点函数
@@ -92,7 +111,11 @@ def analysis_node(state: TyphoonAlertState):
 
 # ---------- flood_node ----------
 def flood_node(state: TyphoonAlertState):
-    raw = flood_agent.invoke(state)
+    # 只在第一次进入 flood_node 时把图片塞进去
+    image_msg = _make_image_message(state["image"])
+    temp_messages = state["messages"] + [image_msg]
+
+    raw = flood_agent.invoke({"messages": temp_messages})
     if isinstance(raw, AIMessage):
         msg = raw
     else:
@@ -170,11 +193,12 @@ workflow.add_edge("tool_node", "analyst")
 
 # 7. 运行入口（改为 async + 使用检查点）
 # ----------------------------------------------------------
-async def run_typhoon_alert(location: str, thread_id: str = "thread-typhoon-1"):
+async def run_typhoon_alert(location: str, satellite_image: bytes, thread_id: str = "thread-typhoon-1"):
     """异步运行台风预警系统，带检查点持久化"""
     initial = {
         "messages": [HumanMessage(content=location)],
-        "sender": "analyst"
+        "sender": "analyst",
+        "image": satellite_image
     }
 # 使用 AsyncSqliteSaver，数据库文件 checkpoints.db 会自动创建
     async with AsyncSqliteSaver.from_conn_string("checkpoints.db") as memory:
@@ -199,8 +223,11 @@ async def run_typhoon_alert(location: str, thread_id: str = "thread-typhoon-1"):
 # ----------------------------------------------------------
 async def main():
     location = "广东省梅州市"
+    # 读一张本地卫星图做演示
+    with open("satellite.png", "rb") as f:
+        img_bytes = f.read()
     print(f"正在为 {location} 生成台风预警方案...\n")
-    result = await run_typhoon_alert(location)
+    result = await run_typhoon_alert(location, img_bytes)
     print("生成的预警方案：\n")
     print(result)
 
