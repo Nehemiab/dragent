@@ -17,9 +17,9 @@ from openai import api_key, base_url
 from dragent_tools.data_reader import typhoon_api as _real_typhoon_api
 
 # 假设的 LLM 客户端
-import llm.Client
-llm = llm.Client.LLMClient()
-Expert_llm=llm.Client.LLMClient(api_key="token-abc123",base_url="http://localhost:8888/v1",model="/root/MiniCPM-o-2_6")
+import llm.Client as Client
+llm = Client.LLMClient()
+Expert_llm=Client.LLMClient(api_key="token-abc123",base_url="http://localhost:8888/v1",model="/root/MiniCPM-o-2_6")
 # -------------------------------------------------
 # 1. 状态定义
 # -------------------------------------------------
