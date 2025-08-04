@@ -7,15 +7,15 @@ class LLMClient:
     """
     支持两种初始化方式：
     1. LLMClient()              -> 自动读取 ../config.yaml
-    2. LLMClient(model, api_key, base_url) -> 覆盖/忽略 yaml 中的配置
+    2. LLMClient( api_key, base_url, model) -> 覆盖/忽略 yaml 中的配置
     本项目agent直接使用 LLMClient()
     """
 
     def __init__(
         self,
-        model: str | None = None,
         api_key: str | None = None,
         base_url: str | None = None,
+        model: str | None = None,
         *,
         config_path: str = "../config.yaml",
         **chat_kwargs,
