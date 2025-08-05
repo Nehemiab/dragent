@@ -79,11 +79,14 @@ def _make_image_message(image_bytes: bytes) -> HumanMessage:
 # 台风分析代理（主脑）
 analysis_prompt = ChatPromptTemplate.from_messages([
     ("system",
-     "你是台风灾害预警分析专家。工作流程：\n"
-     "2. 先根据用户输入的经纬度，调用 typhoon_api 获取信息，请务必生成tool_call，然后一定要传入两个参数：lat（纬度）、lon（经度），均保留一位小数。\n"
-     "3. 然后可向地形-水体专家索要地形、水体等信息。，你可以和他进行多轮对话，不断询问一些细节\n"
-     "4. 收集足够信息后或者已经是进行了六轮对话后，要对专家说“够了”，然后停止与专家的对话，并向用户输出完整风险评估、预防方案、疏散建议、物资清单。\n"
-     "5. 若数据已充足，在最后一条消息中显式包含 **FINAL ANSWER** 字样结束流程。"),
+     "你是台风灾害预警分析专家。你的工作是：\n"
+     "先根据用户输入的经纬度，务必务必先调用 typhoon_api 节点获取信息，请务必生成tool_call，然后一定要传入两个参数：lat（纬度）、lon（经度），均保留一位小数。\n"
+     "然后再通过router路由，向flood节点的地形-水体专家智能体索要地形、水体等信息，先不要急着输出方案。记住，这个flood地形水体专家也是一个智能体，他不会帮你生成方案，我已经提前给了他当地卫星图，他只会根据卫星图去分析当地的水体、山体分布等信息。你要先问这个专家简单的问题，去输出问题问他，比如说问他:专家您好，请问这个地方水体的分布是怎么样的？你可以和他进行多轮对话，不断询问一些山体，水体的细节\n"
+     "收集足够信息后或者已经是进行了六轮对话后，要对专家智能体说“够了”，然后停止与专家智能体节点的对话。记住，超过六轮对话也要强制停止对话，然后输出给用户，要根据得到的信息向用户输出完整风险评估、预防方案、疏散建议、物资清单。\n"
+     "如果你成功接收到来自专家模型的信息，请你先说：“我接收到信息了”,否则先说“我没有接收到专家的信息”\n"
+     "你千万要分清你在和谁说话，跟专家智能体对话的时候你只要输出问题就好了，不要分析，不要像和用户说话一样，你要记住你是在向专家智能体问问题，最后输出给用户了再来分析方案"
+     "若数据已充足，在最后一条消息中显式包含 **FINAL ANSWER** 字样结束流程。\n"
+     "如果你继续调用专家智能体，却没有问他问题，他会提醒你不要再和他对话了，这时候请你结束和专家智能体的对话，把方案输出给用户然后结束流程"),
     MessagesPlaceholder(variable_name="messages")
 ])
 analysis_agent = analysis_prompt | llm.bind_tools([typhoon_api])
@@ -91,8 +94,9 @@ analysis_agent = analysis_prompt | llm.bind_tools([typhoon_api])
 # 地形-水体专家（仅做问答，不调用工具）
 flood_prompt = ChatPromptTemplate.from_messages([
     ("system",
-     "你是地形-水体数据专家。当台风分析专家向你询问某地的地形、山体、水体等信息时，"
-     "请基于知识库给出尽可能详细的数据与建议，并继续对话，直到对方说“够了”。"),
+     "你是地形-水体数据专家。当台风分析智能体向你询问某地的地形、山体、水体等信息时，\n"
+     "如果你接收到了来自分析智能体的问题而不是用户的输入，请先说：“我已收到问题，分析智能体您好！”然后基于知识库，分析那张卫星图，给出尽可能详细的、卫星图上面的水体、山体数据就好了，不用给建议什么的，然后返回给分析智能体，如果分析智能体继续问，你就继续回答他的问题，直到对方说“够了”。\n"
+     "如果分析智能体在和你对话，却没有提出问题，请你提醒一下他：你该输出方案给用户了，没有问题请不要继续和我对话"),
     MessagesPlaceholder(variable_name="messages")
 ])
 flood_agent = flood_prompt | Expert_llm
@@ -137,6 +141,11 @@ def analysis_node(state: TyphoonAlertState):
 def flood_node(state: TyphoonAlertState):
     #  只取关键问题
     concise_msgs = _extract_last_question(state["messages"])
+    print("↓↓↓↓  flood_node 收到的消息  ↓↓↓↓")
+    for m in concise_msgs:
+        print(f"[{type(m).__name__}] {m.content}")
+    print("↑↑↑↑  以上为 flood_node 收到的消息  ↑↑↑↑")
+
     # 只在第一次进入 flood_node 时把图片塞进去
     image_msg = _make_image_message(state["image"])
     temp_messages = concise_msgs + [image_msg]
