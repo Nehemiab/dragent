@@ -1,6 +1,6 @@
 {
    "graphs": {
-     "new_warning": "./new_warning.py:graph"
+     "new_warning": "./new_warning.py:new_warning"
    },
    "python_version": "3.13",
    "env": "./.env",
