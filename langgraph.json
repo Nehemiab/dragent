@@ -1,0 +1,10 @@
+{
+   "graphs": {
+     "RAG_research": "./new_warning.py"
+   },
+   "python_version": "3.10",
+   "env": "./.env",
+   "dependencies": {
+     "."
+   }
+}
