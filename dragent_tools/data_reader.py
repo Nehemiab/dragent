@@ -7,7 +7,7 @@ import math
 import re
 
 # 定义CSV文件路径（根据实际情况修改）
-TYPHOON_DATA_PATH = '其它_DATA2021000024_1945-2024.csv'
+TYPHOON_DATA_PATH = '../dragent_tools/其它_DATA2021000024_1945-2024.csv'
 
 
 def extract_english_intensity(intensity_str):
