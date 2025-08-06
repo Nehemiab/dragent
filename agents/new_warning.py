@@ -52,7 +52,7 @@ def typhoon_api(
             "arguments": {
                 "latitude": lat,
                 "longitude": lon,
-                "time": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
+                "time":"2024-11-10 20:00",
             },
         }
     )
@@ -91,8 +91,8 @@ analysis_prompt = ChatPromptTemplate.from_messages(
             "你的助手flood是多模态大模型，能够识别是否存在水体以及周边情况的。\n"
             "在所以回答结束后，以FINAL ANSWER结尾，以便团队知道停止。\n"
             "请按照以下格式输出你的分析和对flood的询问：\n"
-            "```query：向flood询问的问题\n"
-            "analyses：你的分析```\n"
+            "```query：'向flood询问的问题'\n```"
+            "```analyses：你的分析```\n"
             "请你查询台风，向flood询问是否存在水体,请你在得到肯定回复后水体细节。\n"
             "之后，根据所提供的信息作出该地区风险评估、预防方案、疏散建议、所需物资。"
         ),
@@ -160,10 +160,16 @@ def flood_node(state: TyphoonAlertState):
     print(f"[DEBUG] flood_node 返回：{msg.content}")
     return {"messages": [msg], "sender": "flood"}
 
+def parse_repo(rsp:str,pattern = r"FinancialAnalyse Index: (.*)"):
+    match = re.search(pattern, rsp)
+    if match:
+        return match.group(1)
+    else:
+        return rsp
 
 
 #  7. 条件路由
-def router(state: TyphoonAlertState) -> Literal["tool_node", "flood", "__end__", "continue"]:
+def router(state: TyphoonAlertState) -> str:
     last_msg = state["messages"][-1]
 
     if isinstance(last_msg, AIMessage) and last_msg.tool_calls:
@@ -186,23 +192,19 @@ workflow.add_node("flood", flood_node)
 workflow.add_node("tool_node", tool_node)
 
 workflow.add_edge(START, "analyst")
+workflow.add_edge("tool_node", "analyst")
 
 workflow.add_conditional_edges(
     "analyst",
     router,
-    {"tool_node": "tool_node", "flood": "flood", "__end__": END, "continue": "analyst"},
+    {"tool_node": "tool_node", "flood": "flood", "__end__": END},
 )
 
 workflow.add_conditional_edges(
     "flood",
     router,
-    {"analyst": "analyst", "__end__": END, "continue": "flood"},
+    {"analyst": "analyst", "__end__": END},
 )
-
-workflow.add_edge("tool_node", "analyst")
-
-# 编译图
-new_warning = workflow.compile(name="new_warning")
 
 
 
@@ -251,7 +253,7 @@ events=graph.stream(
     {
         "messages": [HumanMessage(content="广东省梅州市（纬度 24.3，经度 116.1）")],
         "sender": "analyst",
-        "image": open("demo_picture.png", "rb").read()
+        "image": open("../demo_picture.png", "rb").read()
     },
     {"recursion_limit": 10},
 )
