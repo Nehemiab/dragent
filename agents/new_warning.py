@@ -4,6 +4,7 @@ import asyncio
 import functools
 import json
 import operator
+import re
 from datetime import datetime
 from typing import Annotated, Literal, Sequence, TypedDict, Tuple
 from typing_extensions import NotRequired
@@ -24,7 +25,7 @@ import llm.Client as Client
 llm = Client.LLMClient()
 Expert_llm = Client.LLMClient(
     api_key="token-abc123",
-    base_url="http://localhost:8888/v1",
+    base_url="http://localhost:1234/v1",
     model="lora1",
 )
 
@@ -88,8 +89,8 @@ analysis_prompt = ChatPromptTemplate.from_messages(
     [
         (
             "你是台风灾害预警分析专家.你能使用以下工具：typhoon_api。\n"
-            "你的助手flood是多模态大模型，能够识别是否存在水体以及周边情况的。\n"
-            "在所以回答结束后，以FINAL ANSWER结尾，以便团队知道停止。\n"
+            "你的助手flood是多模态大模型，可以向他询问图中是否存在水体以及周边情况的。\n"
+            "等助手回答结束后，以FINAL ANSWER结尾，让团队知道停止。\n"
             "请按照以下格式输出你的分析和对flood的询问：\n"
             "```query：'向flood询问的问题'\n```"
             "```analyses：你的分析```\n"
@@ -118,20 +119,9 @@ flood_agent = flood_prompt | Expert_llm
 
 #  5. 消息裁剪函数（防止爆上下文自己加的
 def _extract_last_question(messages: Sequence[BaseMessage]) -> Sequence[BaseMessage]:
-    """
-    仅保留：
-      - 最后一条 HumanMessage（用户问题）
-      - 紧跟其后的 AIMessage（分析师追问，如果有）
-    其余全部丢弃，节省 token
-    """
-    for i in range(len(messages) - 1, -1, -1):
-        if isinstance(messages[i], HumanMessage):
-            if i + 1 < len(messages) and isinstance(messages[i + 1], AIMessage):
-                return [messages[i], messages[i + 1]]
-            return [messages[i]]
-    # fallback
-    return [HumanMessage(content="请基于卫星图描述当地地形、水体特征。")]
-
+    last_content = messages[-1].content or ""
+    match = re.search(r"query：'(.*?)'\\n```", last_content, re.IGNORECASE | re.DOTALL)
+    return [HumanMessage(content=match.group(1).strip() if match else "")]
 
 
 #  6. 两个智能体的节点函数
@@ -159,13 +149,6 @@ def flood_node(state: TyphoonAlertState):
     msg.name = "flood"
     print(f"[DEBUG] flood_node 返回：{msg.content}")
     return {"messages": [msg], "sender": "flood"}
-
-def parse_repo(rsp:str,pattern = r"FinancialAnalyse Index: (.*)"):
-    match = re.search(pattern, rsp)
-    if match:
-        return match.group(1)
-    else:
-        return rsp
 
 
 #  7. 条件路由
