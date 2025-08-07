@@ -1,23 +1,16 @@
 from __future__ import annotations
-
 import asyncio
-import functools
 import json
 import operator
 import re
-from datetime import datetime
-from typing import Annotated, Literal, Sequence, TypedDict, Tuple
+from typing import Annotated, Sequence, TypedDict
 from typing_extensions import NotRequired
-
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage,ToolMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.tools import tool
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
-
-
-#  异步检查点（暂不启用）
-# from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 #  LLM 客户端
 import llm.Client as Client
@@ -88,14 +81,14 @@ def _make_image_message(image_bytes: bytes) -> HumanMessage:
 analysis_prompt = ChatPromptTemplate.from_messages(
     [
         (
-            "你是台风灾害预警分析专家.你能使用以下工具：typhoon_api。\n"
-            "你的助手flood是多模态大模型，可以向他询问图中是否存在水体以及周边情况的。\n"
-            "等助手回答结束后，以FINAL ANSWER结尾，让团队知道停止。\n"
-            "请按照以下格式输出你的分析和对flood的询问：\n"
-            "```query：'向flood询问的问题'\n```"
+            "你是台风灾害预警分析专家，可以使用的工具是：typhoon_api。\n"
+            "你的助手flood是多模态大模型，可以回答图中是否存在水体以及水体周边的情况。\n"
+            "你的任务：查询台风数据，向flood询问是否存在水体,并询问水体细节。\n"
+            "在流程的最后，根据所提供的信息作出该地区风险评估、预防方案、疏散建议、所需物资。"
+            "请按照以下格式输出对flood的询问和你的分析：\n"
+            "query：'向flood询问的问题'\n"
             "```analyses：你的分析```\n"
-            "请你查询台风，向flood询问是否存在水体,请你在得到肯定回复后水体细节。\n"
-            "之后，根据所提供的信息作出该地区风险评估、预防方案、疏散建议、所需物资。"
+            "所有人回答完成后，以FINAL ANSWER结尾，让团队知道停止。\n"
         ),
         MessagesPlaceholder(variable_name="messages"),
     ]
@@ -107,7 +100,7 @@ flood_prompt = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            "你是water_analyst。一个负责分析水体情况的多模态大模型.你的任务是分析一张卫星图卫星图上面的水体以及周边的环境.\n"
+            "你是water_analyst。一个负责分析水体情况的多模态大模型\n"
         ),
         MessagesPlaceholder(variable_name="messages"),
     ]
@@ -120,7 +113,9 @@ flood_agent = flood_prompt | Expert_llm
 #  5. 消息裁剪函数（防止爆上下文自己加的
 def _extract_last_question(messages: Sequence[BaseMessage]) -> Sequence[BaseMessage]:
     last_content = messages[-1].content or ""
-    match = re.search(r"query：'(.*?)'\\n```", last_content, re.IGNORECASE | re.DOTALL)
+    match = re.search(r"query：'(.*?)'", last_content, re.IGNORECASE | re.DOTALL)
+    if match is None:
+        return [HumanMessage(content="图中是否存在水体")]
     return [HumanMessage(content=match.group(1).strip() if match else "")]
 
 
@@ -176,6 +171,7 @@ workflow.add_node("tool_node", tool_node)
 
 workflow.add_edge(START, "analyst")
 workflow.add_edge("tool_node", "analyst")
+workflow.add_edge("flood", "analyst")
 
 workflow.add_conditional_edges(
     "analyst",
@@ -183,15 +179,44 @@ workflow.add_conditional_edges(
     {"tool_node": "tool_node", "flood": "flood", "__end__": END},
 )
 
-workflow.add_conditional_edges(
-    "flood",
-    router,
-    {"analyst": "analyst", "__end__": END},
-)
 
 
 
-# 9. 异步运行入口以及检查点文件输出（暂不启用）
+# 9. 异步运行入口以及检查点文件输出
+async def main():
+
+    location = '广东省梅州市（纬度 24.3，经度 116.1）'
+
+    # 读入卫星云图
+    with open("../demo_picture.png", "rb") as f:
+        img_bytes = f.read()
+
+    # 初始化对话状态
+    initial = {
+        "messages": [HumanMessage(content=location)],
+        "sender": "analyst",
+        "image": img_bytes,
+    }
+
+    # 运行工作流
+    async with AsyncSqliteSaver.from_conn_string("checkpoints.db") as memory:
+        graph = workflow.compile(checkpointer=memory)
+        '''
+        try:
+            graph.get_graph().draw_mermaid_png(output_file_path="./new_warning.png")
+        except Exception as e:
+            print(e)
+        '''
+        final_state = await graph.ainvoke(
+            initial,
+            {"configurable": {"thread_id": "thread-typhoon-1"},"recursion_limit": 10},
+        )
+
+        # 取回分析师节点的最终结果
+        for msg in reversed(final_state["messages"]):
+            if isinstance(msg, AIMessage) and msg.name == "analyst":
+                return msg.content
+        return "未生成有效预警方案"
 """
 async def run_typhoon_alert(location: str, satellite_image: bytes, thread_id: str = "thread-typhoon-1"):
     initial = {
@@ -215,8 +240,6 @@ async def run_typhoon_alert(location: str, satellite_image: bytes, thread_id: st
             if isinstance(msg, AIMessage) and msg.name == "analyst":
                 return msg.content
         return "未生成有效预警方案"
-
-
 async def main():
     location_name = "广东省梅州市"
     lat, lon = 24.3, 116.1
@@ -225,11 +248,6 @@ async def main():
         img_bytes = f.read()
     result = await run_typhoon_alert(location, img_bytes)
     print(result)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
-"""
 
 graph=workflow.compile()
 events=graph.stream(
@@ -243,5 +261,6 @@ events=graph.stream(
 for event in events:
     print(event)
     print("-----")
-#if __name__ == "__main__":
-#    asyncio.run(main())
+"""
+if __name__ == "__main__":
+    asyncio.run(main())
