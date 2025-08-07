@@ -169,7 +169,7 @@ def router(state: TyphoonAlertState) -> str:
 
 #  8. 构建图
 workflow = StateGraph(TyphoonAlertState)
-
+#创建节点
 workflow.add_node("analyst", analysis_node)
 workflow.add_node("flood", flood_node)
 workflow.add_node("tool_node", tool_node)
