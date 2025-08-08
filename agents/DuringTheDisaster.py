@@ -1,166 +1,256 @@
-from typing import Annotated, Sequence, TypedDict, Literal
-import operator
+from __future__ import annotations
+
 import asyncio
-import base64
-import time
-import uuid
-import logging
+import functools
+import json
+import operator
+import re
+from datetime import datetime
+from typing import Annotated, Literal, Sequence, TypedDict, Tuple
 from typing_extensions import NotRequired
 
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.tools import tool
 from langgraph.graph import END, START, StateGraph
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langgraph.prebuilt import ToolNode
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# ------------------- LLM 客户端 -------------------
+#  异步检查点（暂不启用）
+# from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+#  LLM 客户端
 import llm.Client as Client
+
 llm = Client.LLMClient()
 Expert_llm = Client.LLMClient(
     api_key="token-abc123",
     base_url="http://localhost:8888/v1",
-    model="lora3"
+    model="lora3",
 )
 
-# ------------------- 状态结构 -------------------
-class PostDisasterState(TypedDict):
+
+#  1. 状态定义
+class TyphoonAlertState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
-    sender: str
-    image: NotRequired[bytes]
+    sender: str  # 最后一次是谁调用了工具
+    image: NotRequired[bytes]  # 卫星图，仅 road 节点使用
 
-# ------------------- Prompt 模板 -------------------
-rebuild_prompt = ChatPromptTemplate.from_messages([
-    ("system", (
-        "你是中国应急管理部授权的台风/洪灾应急指挥专家，正在组织灾中应急资源调度方案。\n"
-        "你将基于专家智能体提供的图像评估信息，制定一份面向实际执行的《灾中资源调度与抢险方案》，必须涵盖以下内容：\n\n"
-        "1. 【灾情概况】：明确受灾地点（精确到区/镇）、灾害类型、受损等级与范围；\n"
-        "2. 【紧急资源调度】：饮用水、食品、药品、医疗的调拨计划（数量、类型、优先级）；\n"
-        "3. 【道路抢通与布控】：主干通道抢通计划、临时路线与布控点；\n"
-        "4. 【救援队与装备部署】：各类救援队伍与装备的布点；\n"
-        "5. 【避难安置规划】：临时安置点位置、容量与物资；\n"
-        "6. 【通信与指挥体系】：中继站与指挥链路；\n"
-        "7. 【重点风险控制】：次生灾害点的监测响应机制；\n"
-        "8. 【时间节点与责任分工】：各项任务的时间与负责人。\n\n"
-        "**最后以【最终方案】六个字开头输出完整内容，禁止输出多个版本。**"
-    )),
-    MessagesPlaceholder(variable_name="messages")
-])
 
-damage_prompt = ChatPromptTemplate.from_messages([
-    ("system", (
-        "你是中国遥感中心的灾害图像评估专家，负责识别台风引发的洪水、塌方、道路中断、建筑受损等情况。\n"
-        "请逐条列出图像中识别出的每处关键灾损，建议按以下结构：\n"
-        "1. 【类型】：如道路阻断/桥梁垮塌/堤坝溃决等；\n"
-        "2. 【位置】：精确坐标或地名；\n"
-        "3. 【影响】：完全不可通行/部分塌方/群众被困等；\n"
-        "4. 【建议】：是否需立即抢通、绕行建议等。\n"
-        "如主脑智能体提出问题，请优先回复。"
-    )),
-    MessagesPlaceholder(variable_name="messages")
-])
 
-analysis_agent = rebuild_prompt | llm
-damage_agent = damage_prompt | Expert_llm
+#  2. 工具定义和工具节点
+@tool
+def typhoon_api(
+    lat: Annotated[float, "纬度，保留一位小数"],
+    lon: Annotated[float, "经度，保留一位小数"],
+) -> dict:
+    """根据经纬度获取台风实时数据"""
+    from dragent_tools.data_reader import typhoon_api as _real_typhoon_api
 
-# ------------------- 图像消息封装 -------------------
-def _make_image_message(img_bytes: bytes) -> HumanMessage:
-    return HumanMessage(content=[{
-        "type": "image_url",
-        "image_url": {
-            "url": "data:image/png;base64," + base64.b64encode(img_bytes).decode(),
-            "detail": "high"
+    payload = json.dumps(
+        {
+            "name": "typhoon_api",
+            "arguments": {
+                "latitude": lat,
+                "longitude": lon,
+                "time":"2024-11-10 20:00",
+            },
         }
-    }])
-
-# ------------------- 节点函数 -------------------
-async def analysis_node(state: PostDisasterState):
-    try:
-        raw = await asyncio.wait_for(analysis_agent.ainvoke(state), timeout=60)
-    except asyncio.TimeoutError:
-        raw = AIMessage(content="[超时] 主脑响应超时，请检查服务状态。")
-    except Exception as e:
-        raw = AIMessage(content=f"[异常] 主脑响应失败：{str(e)}")
-    msg = raw if isinstance(raw, AIMessage) else AIMessage(content=str(raw))
-    msg.name = "主脑"
-    msg.content = msg.content.strip()
-    return {"messages": [msg], "sender": "主脑"}
-
-async def damage_node(state: PostDisasterState):
-    already_sent = any(
-        isinstance(m, HumanMessage) and isinstance(m.content, list)
-        and any(isinstance(c, dict) and c.get("type") == "image_url" for c in m.content)
-        for m in state["messages"]
     )
-    temp = state["messages"] if already_sent else state["messages"] + [_make_image_message(state["image"])]
+    result = _real_typhoon_api(payload)
+    print(f"[DEBUG] typhoon_api 返回：{result}")
+    return result
 
-    try:
-        raw = await asyncio.wait_for(damage_agent.ainvoke({"messages": temp}), timeout=60)
-    except asyncio.TimeoutError:
-        raw = AIMessage(content="[超时] 专家响应超时，请检查服务状态。")
-    except Exception as e:
-        raw = AIMessage(content=f"[异常] 专家响应失败：{str(e)}")
+
+# 预置工具节点
+tool_node = ToolNode([typhoon_api])
+
+
+
+#  3. 图片转为可传递的信息辅助函数
+def _make_image_message(image_bytes: bytes) -> HumanMessage:
+    """把二进制图片转成 HumanMessage"""
+    import base64
+
+    b64 = base64.b64encode(image_bytes).decode()
+    url = f"data:image/png;base64,{b64}"
+    return HumanMessage(
+        content=[
+            {"type": "text", "text": "这是当地的卫星图，请据此分析山体、水体、地形等信息。"},
+            {"type": "image_url", "image_url": {"url": url}},
+        ]
+    )
+
+
+
+#  4. 提示词的模板
+# 台风分析代理（主脑）
+analysis_prompt = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            "你是台风灾中资源调度与强险方案专家，可按以下步骤工作：\n"
+            "1. 调用 typhoon_api 获取台风实时数据；\n"
+            "2. 将结果发给 damage 助手，让其评估道路损毁；\n"
+            "3. 收到 damage 返回后，整合所有信息，一次性输出：\n"
+            "   - 地区风险评估\n"
+            "   - 强险方案\n"
+            "   - 所需物资清单\n"
+            "   - 资源调度细节\n"
+            "【输出规范】\n"
+            "- 正文结束后，必须另起一行，仅写：\n"
+            "FINAL ANSWER\n"
+            "- 正文任何地方都不得提前出现这四个字。"
+        ),
+        MessagesPlaceholder(variable_name="messages"),
+    ]
+)
+analysis_agent = analysis_prompt | llm.bind_tools([typhoon_api])
+
+# 道路专家
+road_prompt = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            "你是road_analyst。一个负责分析道路情况的多模态大模型.你的任务是分析一张卫星图上面的道路以及周边的环境.\n"
+        ),
+        MessagesPlaceholder(variable_name="messages"),
+    ]
+)
+road_agent = road_prompt | Expert_llm
+
+
+
+
+#  5. 消息裁剪函数（防止爆上下文自己加的
+def _extract_last_question(messages: Sequence[BaseMessage]) -> Sequence[BaseMessage]:
+    last_content = messages[-1].content or ""
+    match = re.search(r"query：'(.*?)'\\n```", last_content, re.IGNORECASE | re.DOTALL)
+    return [HumanMessage(content=match.group(1).strip() if match else "")]
+
+
+#  6. 两个智能体的节点函数
+def analysis_node(state: TyphoonAlertState):
+    raw = analysis_agent.invoke(state)
     msg = raw if isinstance(raw, AIMessage) else AIMessage(content=str(raw))
-    msg.name = "专家"
-    msg.content = msg.content.strip()
-    return {"messages": [msg], "sender": "专家"}
+    msg.name = "analyst"
+    print(f"[DEBUG] analysis_node 生成的消息：{msg.content}")
+    return {"messages": [msg], "sender": "analyst"}
 
-# ------------------- 路由函数 -------------------
-MAX_TURN = 20
 
-def router(state: PostDisasterState) -> Literal["__end__", "主脑", "专家"]:
-    last_msg = str(state["messages"][-1].content)
-    if last_msg.startswith("【最终方案】") or len(state["messages"]) >= MAX_TURN:
+def road_node(state: TyphoonAlertState):
+    concise_msgs = _extract_last_question(state["messages"])
+    print("↓↓↓↓ road_node 收到的消息 ↓↓↓↓")
+    for m in concise_msgs:
+        print(f"[{type(m).__name__}] {m.content}")
+    print("↑↑↑↑ 以上为 road_node 收到的消息 ↑↑↑↑")
+
+    # 仅在第一次进入 road_node 时插入图片
+    image_msg = _make_image_message(state["image"])
+    temp_messages = concise_msgs + [image_msg]
+
+    raw = road_agent.invoke({"messages": temp_messages})
+    msg = raw if isinstance(raw, AIMessage) else AIMessage(content=str(raw))
+    msg.name = "road"
+    print(f"[DEBUG] road_node 返回：{msg.content}")
+    return {"messages": [msg], "sender": "road"}
+
+
+#  7. 条件路由
+def router(state: TyphoonAlertState) -> str:
+    last_msg = state["messages"][-1]
+
+    # 1. 工具调用 -> 继续
+    if isinstance(last_msg, AIMessage) and last_msg.tool_calls:
+        return "tool_node"
+
+    # 2. 出现终止标记 -> 结束
+    if "FINAL ANSWER" in str(last_msg.content).upper():
         return "__end__"
-    return "专家" if state["sender"] == "主脑" else "主脑"
 
-# ------------------- 构建 LangGraph -------------------
-workflow = StateGraph(PostDisasterState)
-workflow.add_node("主脑", analysis_node)
-workflow.add_node("专家", damage_node)
-workflow.add_edge(START, "主脑")
-workflow.add_conditional_edges("主脑", router, {"专家": "专家", "__end__": END})
-workflow.add_conditional_edges("专家", router, {"主脑": "主脑", "__end__": END})
+    # 3. 如果上一轮的 sender 是 road 且没有更多请求 -> 结束
+    if state.get("sender") == "road":
+        return "__end__"
 
-# ------------------- 主流程入口 -------------------
-async def run_post_disaster_plan(location: str, post_image: bytes, thread_id: str = None):
-    thread_id = thread_id or f"thread-{uuid.uuid4()}"
+    # 4. 否则继续
+    return "road"
+
+
+#  8. 构建图
+workflow = StateGraph(TyphoonAlertState)
+#创建节点
+workflow.add_node("analyst", analysis_node)
+workflow.add_node("road", road_node)
+workflow.add_node("tool_node", tool_node)
+
+workflow.add_edge(START, "analyst")
+workflow.add_edge("tool_node", "analyst")
+
+workflow.add_conditional_edges(
+    "analyst",
+    router,
+    {"tool_node": "tool_node", "road": "road", "__end__": END},
+)
+
+workflow.add_conditional_edges(
+    "road",
+    router,
+    {"analyst": "analyst", "__end__": END},
+)
+
+
+
+# 9. 异步运行入口以及检查点文件输出（暂不启用）
+"""
+async def run_typhoon_alert(location: str, satellite_image: bytes, thread_id: str = "thread-typhoon-1"):
     initial = {
         "messages": [HumanMessage(content=location)],
-        "sender": "主脑",
-        "image": post_image
+        "sender": "analyst",
+        "image": satellite_image,
     }
 
     async with AsyncSqliteSaver.from_conn_string("checkpoints.db") as memory:
         graph = workflow.compile(checkpointer=memory)
-        final_state = await graph.ainvoke(initial, {"configurable": {"thread_id": thread_id}})
+        try:
+            graph.get_graph().draw_mermaid_png(output_file_path="./new_warning.png")
+        except Exception:
+            pass
 
-        print("\n=== 智能体对话记录 ===")
-        for idx, msg in enumerate(final_state["messages"], start=1):
-            if isinstance(msg, (HumanMessage, AIMessage)):
-                role = msg.name or "用户"
-                label = {
-                    "主脑": "主脑智能体",
-                    "专家": "专家智能体",
-                    "用户": "用户输入"
-                }.get(role, role)
-                print(f"\n【轮次 {idx} - {label}】\n{msg.content.strip()}")
-
+        final_state = await graph.ainvoke(
+            initial,
+            {"configurable": {"thread_id": thread_id}},
+        )
         for msg in reversed(final_state["messages"]):
-            if isinstance(msg, AIMessage) and msg.name == "主脑" and msg.content.strip().startswith("【最终方案】"):
-                print("[final answer]\n" + msg.content.strip())
-                return "[final answer]\n" + msg.content.strip()
+            if isinstance(msg, AIMessage) and msg.name == "analyst":
+                return msg.content
+        return "未生成有效预警方案"
 
-        print("未生成有效重建方案")
-        return "未生成有效重建方案"
 
-# ------------------- 本地测试 -------------------
 async def main():
-    location = "广东省梅州市，中心坐标 24.3°N, 116.1°E，请基于灾后航拍图输出资源调度方案。"
-    with open("post_disaster.png", "rb") as f:
+    location_name = "广东省梅州市"
+    lat, lon = 24.3, 116.1
+    location = f"{location_name}（纬度 {lat:.1f}，经度 {lon:.1f}）"
+    with open("demo_picture.png", "rb") as f:
         img_bytes = f.read()
-    print("正在生成灾中资源调度方案...\n")
-    await run_post_disaster_plan(location, img_bytes)
+    result = await run_typhoon_alert(location, img_bytes)
+    print(result)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
+"""
+
+graph=workflow.compile()
+events=graph.stream(
+    {
+        "messages": [HumanMessage(content="广东省梅州市（纬度 24.3，经度 116.1）")],
+        "sender": "analyst",
+        "image": open("../demo_picture.png", "rb").read()
+    },
+    {"recursion_limit": 10},
+)
+for event in events:
+    print(event)
+    print("-----")
+#if __name__ == "__main__":
+#    asyncio.run(main())
