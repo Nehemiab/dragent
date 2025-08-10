@@ -84,9 +84,9 @@ ANALYST_PROMPTS = [
     "```query to building：'向building询问的问题'```",
     "你的助手road是多模态大模型，可以回答图中道路分布、通行能力、易中断路段等情况，我会给他一个当地卫星图。现在第四步，请不要生成toolcall,请你在输出内容的最后一行输出纯文本问题，向road询问相应细节。请严格按照以下格式输出对road的询问：\n"
     "```query to road：'向road询问的问题'```",
-    "现在最后一步综合台风数据、flood/building/road 的全部信息，给出完整的风险评估、预防方案、疏散建议、所需物资，请按照以下格式输出你的分析：\n"
+    "现在最后一步，请你综合台风数据、flood/building/road 的全部信息，给出完整的风险评估、预防方案、疏散建议、所需物资，请按照以下格式输出你的分析：\n"
     "```analyses：你的分析```\n"
-    "所有人回答完成后，以FINAL ANSWER结尾，让团队知道停止。\n",
+    "输出方案后，请你以 FINAL ANSWER 字样结尾，以便让流程停止。\n"
 ]
 
 
@@ -260,7 +260,7 @@ async def main():
         "messages": [HumanMessage(content=location)],
         "sender": "analyst",
         "image": img_bytes,
-        "counter": 0,
+        "counter": 0
     }
 
     # 运行工作流
