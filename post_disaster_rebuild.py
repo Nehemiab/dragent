@@ -31,30 +31,6 @@ class PostDisasterState(TypedDict):
     counter: int  # <- 新增计数器
     labeled_image: NotRequired[bytes]  # 可保留，也可不用
 
-def _push_image_to_ui(image_bytes: bytes, title: str = "灾后带框图"):
-    """
-    把二进制图片推送到 LangGraph Agent Chat UI（Generative UI）。
-    本地调试时事件会被忽略，不会抛错。
-    """
-    import base64
-    b64 = base64.b64encode(image_bytes).decode()
-    ui_msg = {
-        "type": "ui",
-        "content": {
-            "type": "image",
-            "title": title,
-            "src": f"data:image/jpeg;base64,{b64}"
-        }
-    }
-    # 向当前线程的 event stream 写一条消息
-    try:
-        # 当在真正的 LangGraph Server 环境里运行时，get_event_stream 会拿到队列
-        from langgraph.server import get_event_stream
-        stream = get_event_stream()
-        stream.write(json.dumps(ui_msg))
-    except Exception:
-        # 本地非 Server 环境：静默忽略
-        pass
 
 
 #  2. 提示词的模板
