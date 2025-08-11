@@ -1,12 +1,13 @@
 import cv2
 import numpy as np
 
-def blend_mask_to_image(image, mask, color=(0, 0, 255), alpha=0.4):
+def blend_mask_to_image(img_path, mask_path,output_path, color=(0, 0, 255), alpha=0.4):
+    image = cv2.imread(img_path)
+    mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
     """
     将二值掩膜与原图融合，以半透明颜色高亮目标区域。
 
     参数
-    ----
     image : np.ndarray
         原图，BGR 格式，shape [H, W, 3]，dtype uint8。
     mask  : np.ndarray
@@ -15,9 +16,7 @@ def blend_mask_to_image(image, mask, color=(0, 0, 255), alpha=0.4):
         标记颜色，默认红色 (B, G, R)。
     alpha : float
         掩膜区域的不透明度，0~1，越大越不透明。
-
     返回
-    ----
     blended : np.ndarray
         融合后的图像，与原图同尺寸同 dtype。
     """
@@ -41,8 +40,10 @@ def blend_mask_to_image(image, mask, color=(0, 0, 255), alpha=0.4):
     inv_mask = cv2.bitwise_not(mask_u8)
     background = cv2.bitwise_and(image, image, mask=inv_mask)
     blended = cv2.add(blended, background)
-
-    return blended
+    cv2.imwrite(output_path, blended)
+    with open(output_path, "rb") as f:
+        result = f.read()
+    return result
 
 
 # ---------------------------------------------
@@ -51,14 +52,6 @@ def blend_mask_to_image(image, mask, color=(0, 0, 255), alpha=0.4):
 if __name__ == "__main__":
     img_path  = "GF2_PMS1__L1A0000564539-MSS1_1_2.png"
     mask_path = "GF2_PMS1__L1A0000564539-MSS1_1_2_mask.png"
-
-    img  = cv2.imread(img_path)
-    mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
-
-    if img is None or mask is None:
-        raise FileNotFoundError("请确认图片路径正确")
-
-    result = blend_mask_to_image(img, mask, color=(0, 255, 255), alpha=0.5)  # 黄色标记
-
-    cv2.imwrite("result.jpg", result)
+    output_path = "result.jpg"
+    res=blend_mask_to_image(img_path, mask_path, output_path,color=(0, 255, 255), alpha=0.5)  # 黄色标记
     print("已生成 result.jpg")
