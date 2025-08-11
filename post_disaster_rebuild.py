@@ -226,7 +226,7 @@ async def main():
 
     # 运行工作流
     async with AsyncSqliteSaver.from_conn_string("checkpoints.db") as memory:
-        graph = workflow.compile(checkpointer=memory)
+        graph = workflow.compile(checkpointer=memory,name="post_disaster_rebuild")
         '''
         try:
             graph.get_graph().draw_mermaid_png(output_file_path="./post_disaster_rebuild.png")
