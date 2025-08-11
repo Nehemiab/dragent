@@ -13,7 +13,7 @@ def gen_mask_pending(image_byte, server_url="http://localhost:9000/analyze"):
     用法:
     res = gen_mask(image_bytes)
     返回一个字典，包含文本和掩膜字节
-    {'text': '生成的文本描述','mask_bytes': b'掩膜的二进制数据'}//res
+    {'text': '生成的文本描述','result': 合成蒙版之后的图片bytes}//res
 
     """
     file= {'image': ('image.jpg', image_byte, 'image/jpeg')}
