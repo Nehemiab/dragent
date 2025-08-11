@@ -1,159 +1,222 @@
-from typing import Annotated, Sequence, TypedDict, Literal, Tuple
-import operator
+from __future__ import annotations
 import asyncio
-import functools
 import json
-from datetime import datetime
+import operator
+import re
+from typing import Annotated, Sequence, TypedDict
 from typing_extensions import NotRequired
-
-
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage,ToolMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.tools import tool
 from langgraph.graph import END, START, StateGraph
-from langgraph.prebuilt import ToolNode   # 官方预置工具节点
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver #检查点
-from openai import api_key, base_url
+from langgraph.prebuilt import ToolNode
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+import cv2
+import numpy as np
+import sys
+from dragent_tools.merge_mask import blend_mask_to_image     # 导入蒙版合成函数
 
-from dragent_tools.data_reader import typhoon_api as _real_typhoon_api
-
-# 假设的 LLM 客户端
+#  LLM 客户端
 import llm.Client as Client
+
 llm = Client.LLMClient()
-Expert_llm=Client.LLMClient(api_key="token-abc123",base_url="http://localhost:8888/v1",model="lora1")
-# -------------------------------------------------
-# 1. 状态定义
-# -------------------------------------------------
+Water_llm = Client.LLMClient(api_key="token-abc123",base_url="http://localhost:8888/v1",model="lora1")
+Building_llm = Client.LLMClient(api_key="token-abc123",base_url="http://localhost:8888/v1",model="lora2")
+Road_llm = Client.LLMClient(api_key="token-abc123",base_url="http://localhost:8888/v1",model="lora3")
+
+#  1. 状态定义
 class TyphoonAlertState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
-    # 用于记录最后一次是谁调用了工具，方便 router 返回
-    sender: str
-    # 卫星图只给 flood 节点用，不进入 messages
-    image: NotRequired[bytes]   # 新增：允许缺失
+    sender: str  # 最后一次是谁调用了工具
+    image: NotRequired[bytes]  # 卫星图，仅 flood、building、road 节点使用
+    counter: int  # <- 新增计数器
 
 
-# -------------------------------------------------
-# 2. 工具定义
-# -------------------------------------------------
+
+#  2. 工具定义和工具节点
 @tool
 def typhoon_api(
     lat: Annotated[float, "纬度，保留一位小数"],
-    lon: Annotated[float, "经度，保留一位小数"]
+    lon: Annotated[float, "经度，保留一位小数"],
 ) -> dict:
     """根据经纬度获取台风实时数据"""
-    # 组装成原来函数认识的 JSON 格式
-    payload = json.dumps({
-        "name": "typhoon_api",
-        "arguments": {
-            "latitude": lat,
-            "longitude": lon,
-            "time": datetime.utcnow().strftime('%Y-%m-%d %H:%M')
+    from dragent_tools.data_reader import typhoon_api as _real_typhoon_api
+
+    payload = json.dumps(
+        {
+            "name": "typhoon_api",
+            "arguments": {
+                "latitude": lat,
+                "longitude": lon,
+                "time":"2024-11-10 20:00",
+            },
         }
-    })
+    )
     result = _real_typhoon_api(payload)
-    print(f"[DEBUG] typhoon_api 返回：{result}")  # 打印返回值
+    print(f"[DEBUG] typhoon_api 返回：{result}")
     return result
 
 
-# 把工具统一放到 ToolNode
+# 预置工具节点
 tool_node = ToolNode([typhoon_api])
 
 
+
+#  3. 图片转为可传递的信息辅助函数
 def _make_image_message(image_bytes: bytes) -> HumanMessage:
-    # 这里假设传进来的是 PNG/JPG 原始字节
+    """把二进制图片转成 HumanMessage"""
     import base64
+
     b64 = base64.b64encode(image_bytes).decode()
-    # 如果图片很大，可以改成 `data:image/jpeg;base64,` 等
     url = f"data:image/png;base64,{b64}"
     return HumanMessage(
         content=[
-            {"type": "text", "text": "这是当地的卫星图，请据此分析山体、水体、地形等信息。"},
-            {"type": "image_url", "image_url": {"url": url}}
+            {"type": "text", "text": "这是当地的卫星图，请根据你的角色分析图中信息。"},
+            {"type": "image_url", "image_url": {"url": url}},
         ]
     )
 
-# -------------------------------------------------
-# 3. 代理提示模板
-# -------------------------------------------------
 
+
+#  4. 提示词的模板
 # 台风分析代理（主脑）
-analysis_prompt = ChatPromptTemplate.from_messages([
-    ("system",
-     "你是台风灾害预警分析专家。工作流程：\n"
-     "2. 先根据用户输入的经纬度，调用 typhoon_api 获取信息，请务必生成tool_call，然后一定要传入两个参数：lat（纬度）、lon（经度），均保留一位小数。\n"
-     "3. 然后可向地形-水体专家索要地形、水体等信息。，你可以和他进行多轮对话，不断询问一些细节\n"
-     "4. 收集足够信息后或者已经是进行了六轮对话后，要对专家说“够了”，然后停止与专家的对话，并向用户输出完整风险评估、预防方案、疏散建议、物资清单。\n"
-     "5. 若数据已充足，在最后一条消息中显式包含 **FINAL ANSWER** 字样结束流程。"),
-    MessagesPlaceholder(variable_name="messages")
-])
-analysis_agent = analysis_prompt | llm.bind_tools([typhoon_api])
+# 2. 分阶段提示词列表
+ANALYST_PROMPTS = [
+    "你是我的台风灾害预警分析专家，请你严格按照我的步骤一步一步来执行。现在第一步，请你请你先使用工具typhoon_api查询台风数据。",
+    "你的助手flood是多模态大模型，可以回答图中水体位置以及水体周边的情况，我会给他一个当地卫星图。现在第二步,请不要调用工具，不要生成toolcall，请你在输出内容的最后一行输出纯文本问题，向flood询问图中相应细节。请严格按照以下格式在最后一行输出对flood的询问（请记得加单引号）：\n"
+    "```query to flood：'向flood询问的问题'```",
+    "你的助手building是多模态大模型，可以回答图中房屋分布、建筑密度、脆弱性、损毁程度等情况，我会给他一个当地卫星图。现在第三步,请不要生成toolcall,请你在输出内容的最后一行输出纯文本问题，向building询问图中相应细节。请严格按照以下格式输出对building的询问：\n"
+    "```query to building：'向building询问的问题'```",
+    "你的助手road是多模态大模型，可以回答图中道路分布、通行能力、易中断路段等情况，我会给他一个当地卫星图。现在第四步，请不要生成toolcall,请你在输出内容的最后一行输出纯文本问题，向road询问相应细节。请严格按照以下格式输出对road的询问：\n"
+    "```query to road：'向road询问的问题'```",
+    "现在最后一步，请你综合台风数据、flood/building/road 的全部信息，给出完整的风险评估、预防方案、疏散建议、所需物资，请按照以下格式输出你的分析：\n"
+    "```analyses：你的分析```\n"
+    "输出方案后，请你以 FINAL ANSWER 字样结尾，以便让流程停止。\n"
+]
 
-# 地形-水体专家（仅做问答，不调用工具）
+
+# 地形-水体专家
 flood_prompt = ChatPromptTemplate.from_messages([
-    ("system",
-     "你是地形-水体数据专家。当台风分析专家向你询问某地的地形、山体、水体等信息时，"
-     "请基于知识库给出尽可能详细的数据与建议，并继续对话，直到对方说“够了”。"),
-    MessagesPlaceholder(variable_name="messages")
+    ("system","你是water_analyst。一个只负责描述图中水体情况的多模态大模型\n"),
+    MessagesPlaceholder(variable_name="messages"),
 ])
-flood_agent = flood_prompt | Expert_llm
+flood_agent = flood_prompt | Water_llm
+
+
+#房屋专家
+building_prompt = ChatPromptTemplate.from_messages([
+    ("system", "你是building_analyst。一个只负责描述图中房屋分布、建筑密度、脆弱性、损毁程度的多模态大模型"),
+    MessagesPlaceholder(variable_name="messages"),
+])
+building_agent = building_prompt | Building_llm
+
+
+#道路专家
+road_prompt = ChatPromptTemplate.from_messages([
+    ("system", "你是road_analyst。一个只负责描述图中道路分布、通行能力、易中断路段的多模态大模型"),
+    MessagesPlaceholder(variable_name="messages"),
+])
+road_agent = road_prompt | Road_llm
 
 
 
+
+
+
+#  5. 消息裁剪函数（防止爆上下文自己加的
 def _extract_last_question(messages: Sequence[BaseMessage]) -> Sequence[BaseMessage]:
-    """
-    只保留：
-    1. 最后一条 HumanMessage（用户问题）
-    2. 紧接在它后面的 AIMessage（分析师追问，如果有）
-    3. 其余全部丢弃
-    这样可以最大限度减少 token
-    """
-    # 倒序找 HumanMessage
-    for i in range(len(messages) - 1, -1, -1):
-        if isinstance(messages[i], HumanMessage):
-            # 如果后面还有一条 AIMessage，也带上（通常就是追问）
-            if i + 1 < len(messages) and isinstance(messages[i + 1], AIMessage):
-                return [messages[i], messages[i + 1]]
-            return [messages[i]]
-    # fallback：实在没有 HumanMessage，给空
-    return [HumanMessage(content="请基于卫星图描述当地地形、水体特征。")]
+    last_content = messages[-1].content or ""
+    match = re.search(r"：'(.*?)'", last_content, re.IGNORECASE | re.DOTALL)
+    return [HumanMessage(content=match.group(1).strip() if match else "")]
 
 
-# -------------------------------------------------
-# 4. 节点函数
-# -------------------------------------------------
-
-# ---------- analysis_node ----------
+#  6. 四个智能体的节点函数
 def analysis_node(state: TyphoonAlertState):
-    raw = analysis_agent.invoke(state)
-    if isinstance(raw, AIMessage):
-        msg = raw
-    else:
-        msg = AIMessage(content=str(raw))
-    msg.name = "analyst"          # 新增
-    print(f"[DEBUG] analysis_node 生成的消息：{msg.content}")  # 打印生成的消息
-    return {"messages": [msg], "sender": "analyst"}
+    idx = min(state["counter"], len(ANALYST_PROMPTS) - 1)
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", ANALYST_PROMPTS[idx]),
+        MessagesPlaceholder(variable_name="messages"),
+    ])
+    model = prompt | llm.bind_tools([typhoon_api])
+    raw = model.invoke(state)
+    msg = raw if isinstance(raw, AIMessage) else AIMessage(content=str(raw))
+    msg.name = "analyst"
+    print(f"[DEBUG] analysis_node 生成的消息：{msg.content}")
+    return {"messages": [msg], "sender": "analyst", "counter": state["counter"] + 1}
 
-# ---------- flood_node ----------
+
 def flood_node(state: TyphoonAlertState):
-    #  只取关键问题
+    state["image"]=open("demo_picture.png", "rb").read()
     concise_msgs = _extract_last_question(state["messages"])
-    # 只在第一次进入 flood_node 时把图片塞进去
+    print("↓↓↓↓ flood_node 收到的消息 ↓↓↓↓")
+    for m in concise_msgs:
+        print(f"[{type(m).__name__}] {m.content}")
+    print("↑↑↑↑ 以上为 flood_node 收到的消息 ↑↑↑↑")
+
+    img_bgr = cv2.imdecode(np.frombuffer(state["raw_image"], np.uint8), cv2.IMREAD_COLOR)
+
+    # 2. 这里换成实际获取 mask 的方式（二值图，np.uint8）
+    mask = ...  # ← 用自己的方式获取水体掩膜
+
+    highlighted = blend_mask_to_image(img_bgr, mask, color=(0, 255, 255), alpha=0.5)
+
+    # 4. 保存到本地
+    cv2.imwrite("flood_highlight.png", highlighted)
+
+    # 仅在第一次进入 flood_node 时插入图片
     image_msg = _make_image_message(state["image"])
     temp_messages = concise_msgs + [image_msg]
 
     raw = flood_agent.invoke({"messages": temp_messages})
-    if isinstance(raw, AIMessage):
-        msg = raw
-    else:
-        msg = AIMessage(content=str(raw))
-    msg.name = "flood"            # 新增
-    print(f"[DEBUG] flood_node 返回：{msg.content}")  # 打印返回值
-    return {"messages": [msg], "sender": "flood"}
+    msg = raw if isinstance(raw, AIMessage) else AIMessage(content=str(raw))
+    msg.name = "flood"
+    print(f"[DEBUG] flood_node 返回：{msg.content}")
+    return {"messages": [msg], "sender": "flood", "counter": state["counter"]}
 
-# -------------------------------------------------
-# 5. 条件路由函数
-# -------------------------------------------------
-def router(state: TyphoonAlertState) -> Literal["tool_node", "flood", "__end__", "continue"]:
+
+def building_node(state: TyphoonAlertState):
+    concise_msgs = _extract_last_question(state["messages"])
+    print("↓↓↓↓ building_node 收到的消息 ↓↓↓↓")
+    for m in concise_msgs:
+        print(f"[{type(m).__name__}] {m.content}")
+    print("↑↑↑↑ 以上为 building_node 收到的消息 ↑↑↑↑")
+
+    # 仅在第一次进入 building_node 时插入图片
+    image_msg = _make_image_message(state["image"])
+    temp_messages = concise_msgs + [image_msg]
+
+    raw = building_agent.invoke({"messages": temp_messages})
+    msg = raw if isinstance(raw, AIMessage) else AIMessage(content=str(raw))
+    msg.name = "building"
+    print(f"[DEBUG] building_node 返回：{msg.content}")
+    return {"messages": [msg], "sender": "building", "counter": state["counter"]}
+
+
+def road_node(state: TyphoonAlertState):
+    concise_msgs = _extract_last_question(state["messages"])
+    print("↓↓↓↓ road_node 收到的消息 ↓↓↓↓")
+    for m in concise_msgs:
+        print(f"[{type(m).__name__}] {m.content}")
+    print("↑↑↑↑ 以上为 road_node 收到的消息 ↑↑↑↑")
+
+    # 仅在第一次进入 road_node 时插入图片
+    image_msg = _make_image_message(state["image"])
+    temp_messages = concise_msgs + [image_msg]
+
+    raw = road_agent.invoke({"messages": temp_messages})
+    msg = raw if isinstance(raw, AIMessage) else AIMessage(content=str(raw))
+    msg.name = "road"
+    print(f"[DEBUG] road_node 返回：{msg.content}")
+    return {"messages": [msg], "sender": "road", "counter": state["counter"]}
+
+
+
+#  7. 条件路由
+def router(state: TyphoonAlertState) -> str:
+    if state["counter"] >= 5:
+        print(f"[ROUTER] {state.get('sender')} → __end__ ")
+        return "__end__"
+
     last_msg = state["messages"][-1]
 
     if isinstance(last_msg, AIMessage) and last_msg.tool_calls:
@@ -163,102 +226,127 @@ def router(state: TyphoonAlertState) -> Literal["tool_node", "flood", "__end__",
     else:
         sender = state.get("sender", "analyst")
         if sender == "analyst":
-            next_node = "flood"
-        elif sender == "flood":
-            next_node = "analyst"
-        else:
-            next_node = "continue"
-
-    # 👇 加这 1 行
-    print("[ROUTER]", state.get("sender"), "→", next_node)
+            content = str(last_msg.content).lower()
+            if "query to building" in content:
+                next_node = "building"
+            elif "query to road" in content:
+                next_node = "road"
+            else:
+                next_node = "flood"
+    print(f"[ROUTER] {state.get('sender')} → {next_node}")
     return next_node
 
-# -------------------------------------------------
-# 6. 构建图
-# -------------------------------------------------
-workflow = StateGraph(TyphoonAlertState)
 
+
+#  8. 构建图
+workflow = StateGraph(TyphoonAlertState)
+#创建节点
 workflow.add_node("analyst", analysis_node)
 workflow.add_node("flood", flood_node)
+workflow.add_node("building", building_node)
+workflow.add_node("road", road_node)
 workflow.add_node("tool_node", tool_node)
 
-# START -> analyst
 workflow.add_edge(START, "analyst")
+workflow.add_edge("tool_node", "analyst")
+workflow.add_edge("flood", "analyst")
+workflow.add_edge("building", "analyst")
+workflow.add_edge("road", "analyst")
 
-# analyst 的条件边
 workflow.add_conditional_edges(
     "analyst",
     router,
-    {
-        "tool_node": "tool_node",
-        "flood": "flood",
-        "__end__": END,
-        "continue": "analyst"  # 理论上不会走到这里
-    }
+    {"tool_node": "tool_node", "flood": "flood", "building": "building", "road": "road", "__end__": END},
 )
 
-# flood 的条件边
-workflow.add_conditional_edges(
-    "flood",
-    router,
-    {
-        "analyst": "analyst",
-        "__end__": END,
-        "continue": "flood"
-    }
+post=compile=workflow.compile(
+    checkpointer=AsyncSqliteSaver.from_conn_string("checkpoints.db"),
+    name="new_warning"
 )
 
-# tool_node 的返回边：始终回到调用它的节点
-workflow.add_edge("tool_node", "analyst")
 
+# 9. 异步运行入口以及检查点文件输出
+'''
+async def main():
 
-new_warning = workflow.compile(name="new_warning")
+    location = '广东省梅州市（纬度 24.3，经度 116.1）'
 
+    # 读入卫星云图
+    with open("demo_picture.png", "rb") as f:
+        img_bytes = f.read()
 
-# 7. 运行入口（改为 async + 使用检查点）
-# ----------------------------------------------------------
-async def run_typhoon_alert(location: str, satellite_image: bytes, thread_id: str = "thread-typhoon-1"):
-    """异步运行台风预警系统，带检查点持久化"""
+    # 初始化对话状态
     initial = {
         "messages": [HumanMessage(content=location)],
         "sender": "analyst",
-        "image": satellite_image
+        "image": img_bytes,
+        "counter": 0
     }
-# 使用 AsyncSqliteSaver，数据库文件 checkpoints.db 会自动创建
+
+    # 运行工作流
+    async with AsyncSqliteSaver.from_conn_string("checkpoints.db") as memory:
+        graph = workflow.compile(checkpointer=memory)
+        
+        try:
+            graph.get_graph().draw_mermaid_png(output_file_path="./new_warning.png")
+        except Exception as e:
+            print(e)
+        
+        final_state = await graph.ainvoke(
+            initial,
+            {"configurable": {"thread_id": "thread-typhoon-1"},"recursion_limit": 20},
+        )
+
+        # 取回分析师节点的最终结果
+        for msg in reversed(final_state["messages"]):
+            if isinstance(msg, AIMessage) and msg.name == "analyst":
+                return msg.content
+        return "未生成有效预警方案"
+"""
+async def run_typhoon_alert(location: str, satellite_image: bytes, thread_id: str = "thread-typhoon-1"):
+    initial = {
+        "messages": [HumanMessage(content=location)],
+        "sender": "analyst",
+        "image": satellite_image,
+    }
+
     async with AsyncSqliteSaver.from_conn_string("checkpoints.db") as memory:
         graph = workflow.compile(checkpointer=memory)
         try:
             graph.get_graph().draw_mermaid_png(output_file_path="./new_warning.png")
         except Exception:
-            # This requires some extra dependencies and is optional
             pass
-        print(f"[DEBUG] 开始 thread={thread_id}")
+
         final_state = await graph.ainvoke(
             initial,
-            {"configurable": {"thread_id": thread_id}}
+            {"configurable": {"thread_id": thread_id}},
         )
-        print(f"[DEBUG] 结束，共 {len(final_state['messages'])} 条消息")
-        # 取出最后一条来自 analyst 的消息
         for msg in reversed(final_state["messages"]):
             if isinstance(msg, AIMessage) and msg.name == "analyst":
                 return msg.content
         return "未生成有效预警方案"
-
-# ----------------------------------------------------------
-# 8. 示例运行（async main）
-# ----------------------------------------------------------
 async def main():
     location_name = "广东省梅州市"
     lat, lon = 24.3, 116.1
     location = f"{location_name}（纬度 {lat:.1f}，经度 {lon:.1f}）"
-
-    # 读一张本地卫星图做演示
     with open("demo_picture.png", "rb") as f:
         img_bytes = f.read()
-    print(f"正在为 {location} 生成台风预警方案...\n")
     result = await run_typhoon_alert(location, img_bytes)
-    print("生成的预警方案：\n")
     print(result)
 
+graph=workflow.compile()
+events=graph.stream(
+    {
+        "messages": [HumanMessage(content="广东省梅州市（纬度 24.3，经度 116.1）")],
+        "sender": "analyst",
+        "image": open("../demo_picture.png", "rb").read()
+    },
+    {"recursion_limit": 10},
+)
+for event in events:
+    print(event)
+    print("-----")
+"""
 if __name__ == "__main__":
     asyncio.run(main())
+'''
