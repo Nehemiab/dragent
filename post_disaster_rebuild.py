@@ -19,7 +19,8 @@ llm = Client.LLMClient()
 Building_llm = Client.LLMClient(api_key="token-abc123",base_url="http://localhost:8888/v1",model="lora2")
 Road_llm = Client.LLMClient(api_key="token-abc123",base_url="http://localhost:8888/v1",model="lora3")
 
-
+with open("origin.JPG", "rb") as f:
+    img_bytes = f.read()
 
 # 1. 状态定义
 class PostDisasterState(TypedDict):
@@ -29,6 +30,31 @@ class PostDisasterState(TypedDict):
     raw_image: NotRequired[bytes]  # 灾后卫星/航拍图（原图，给 road）
     counter: int  # <- 新增计数器
     labeled_image: NotRequired[bytes]  # 可保留，也可不用
+
+def _push_image_to_ui(image_bytes: bytes, title: str = "灾后带框图"):
+    """
+    把二进制图片推送到 LangGraph Agent Chat UI（Generative UI）。
+    本地调试时事件会被忽略，不会抛错。
+    """
+    import base64
+    b64 = base64.b64encode(image_bytes).decode()
+    ui_msg = {
+        "type": "ui",
+        "content": {
+            "type": "image",
+            "title": title,
+            "src": f"data:image/jpeg;base64,{b64}"
+        }
+    }
+    # 向当前线程的 event stream 写一条消息
+    try:
+        # 当在真正的 LangGraph Server 环境里运行时，get_event_stream 会拿到队列
+        from langgraph.server import get_event_stream
+        stream = get_event_stream()
+        stream.write(json.dumps(ui_msg))
+    except Exception:
+        # 本地非 Server 环境：静默忽略
+        pass
 
 
 #  2. 提示词的模板
@@ -66,6 +92,8 @@ road_agent = road_prompt | Road_llm
 def label_node(state: PostDisasterState) -> dict:
     import os
     from dragent_tools.label_draw import label_draw
+    state["image"]=open("origin.JPG", "rb").read()
+    state["counter"]=0
     tmp_in  = "_tmp_raw.jpg"
     tmp_out = "_tmp_labeled.jpg"
     label_path = "../dragent_tools/labels.txt"
@@ -77,6 +105,10 @@ def label_node(state: PostDisasterState) -> dict:
     # 读回带框图
     with open(tmp_out, "rb") as f:
         labeled_bytes = f.read()
+
+    # ===== 把带框图推送到前端 =====
+    _push_image_to_ui(labeled_bytes, title="灾后房屋与道路带框标注图")
+
     # 清理临时文件（可选）
     os.remove(tmp_in)
     os.remove(tmp_out)
@@ -206,8 +238,15 @@ workflow.add_conditional_edges(
 )
 
 
+post=compile=workflow.compile(
+    checkpointer=AsyncSqliteSaver.from_conn_string("checkpoints.db"),
+    name="post_disaster_rebuild"
+)
+
+
 
 # 9. 异步运行入口以及检查点文件输出
+'''
 async def main():
 
     location = '广东省梅州市'
@@ -227,12 +266,12 @@ async def main():
     # 运行工作流
     async with AsyncSqliteSaver.from_conn_string("checkpoints.db") as memory:
         graph = workflow.compile(checkpointer=memory,name="post_disaster_rebuild")
-        '''
+        
         try:
             graph.get_graph().draw_mermaid_png(output_file_path="./post_disaster_rebuild.png")
         except Exception as e:
             print(e)
-        '''
+        
         final_state = await graph.ainvoke(
             initial,
             {"configurable": {"thread_id": "thread-damage-1"},"recursion_limit": 20},
@@ -307,3 +346,4 @@ for event in events:
 """
 if __name__ == "__main__":
     asyncio.run(main())
+'''
