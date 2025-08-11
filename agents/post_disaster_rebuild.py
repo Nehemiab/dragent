@@ -65,29 +65,36 @@ road_agent = road_prompt | Road_llm
 # 2. label_node：生成带框图，并把两份图都塞进 state
 def label_node(state: PostDisasterState) -> dict:
     import os
-    from dragent_tools.label_draw import label_draw
-    tmp_in  = "_tmp_raw.jpg"
-    tmp_out = "_tmp_labeled.jpg"
-    label_path = "../dragent_tools/labels.txt"
-    # 写原图到临时文件
-    with open(tmp_in, "wb") as f:
-        f.write(state["image"])          # 此时 state["image"] 还是原图
-    # 画框
-    label_draw(tmp_in, label_path, tmp_out)
-    # 读回带框图
-    with open(tmp_out, "rb") as f:
-        labeled_bytes = f.read()
-    # 清理临时文件（可选）
-    os.remove(tmp_in)
-    os.remove(tmp_out)
+    import tempfile
+    from tools.yolo_tool import run_yolo
+    state["image"] = open("origin.JPG", "rb").read()
+    state["counter"] = 0
+    # 1. 把原图写临时文件
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_in:
+        tmp_in.write(state["image"])
+        tmp_in_name = tmp_in.name
+
+    try:
+        # 2. YOLO 检测
+        labeled_img_path, _ = run_yolo(tmp_in_name)
+
+        # 3. 读回带框图
+        with open(labeled_img_path, "rb") as f:
+            labeled_bytes = f.read()
+
+        # 4. 清理临时文件（可选：也清理 YOLO 输出目录）
+        import shutil
+        shutil.rmtree("F:/损毁房屋result/predict", ignore_errors=True)
+
+    finally:
+        os.unlink(tmp_in_name)
     return {
-        "raw_image": state["image"],     # 原图给 road
-        "image": labeled_bytes,          # 带框图给 building
+        "raw_image": state["image"],  # 原图给 road
+        "image": labeled_bytes,  # 带框图给 building
         "labeled_image": labeled_bytes,  # 这里把同一份带框图写进 labeled_image
         "sender": "label_tool",
         "counter": state["counter"]
     }
-
 
 
 #  3. 图片转为可传递的信息辅助函数
