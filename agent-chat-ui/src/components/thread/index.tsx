@@ -1,3 +1,4 @@
+import React from "react";
 import { v4 as uuidv4 } from "uuid";
 import { ReactNode, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
@@ -46,6 +47,7 @@ import {
   ArtifactTitle,
   useArtifactContext,
 } from "./artifact";
+import { LoadExternalComponent } from "@langchain/langgraph-sdk/react-ui";
 
 function StickyToBottomContent(props: {
   content: ReactNode;
@@ -398,22 +400,32 @@ export function Thread() {
                 <>
                   {messages
                     .filter((m) => !m.id?.startsWith(DO_NOT_RENDER_ID_PREFIX))
-                    .map((message, index) =>
-                      message.type === "human" ? (
-                        <HumanMessage
-                          key={message.id || `${message.type}-${index}`}
-                          message={message}
-                          isLoading={isLoading}
-                        />
-                      ) : (
-                        <AssistantMessage
-                          key={message.id || `${message.type}-${index}`}
-                          message={message}
-                          isLoading={isLoading}
-                          handleRegenerate={handleRegenerate}
-                        />
-                      ),
-                    )}
+                    .map((message, index) => (
+                      <React.Fragment key={message.id || `${message.type}-${index}`}>
+                        {message.type === "human" ? (
+                          <HumanMessage
+                            message={message}
+                            isLoading={isLoading}
+                          />
+                        ) : (
+                          <AssistantMessage
+                            message={message}
+                            isLoading={isLoading}
+                            handleRegenerate={handleRegenerate}
+                          />
+                        )}
+                        {/* 生成式UI渲染 */}
+                        {stream.values?.ui
+                          ?.filter((ui) => ui.metadata?.message_id === message.id)
+                          .map((ui) => (
+                            <LoadExternalComponent
+                              key={ui.id}
+                              stream={stream}
+                              message={ui}
+                            />
+                          ))}
+                      </React.Fragment>
+                    ))}
                   {/* Special rendering case where there are no AI/tool messages, but there is an interrupt.
                     We need to render it outside of the messages list, since there are no messages to render */}
                   {hasNoAIOrToolMessages && !!stream.interrupt && (

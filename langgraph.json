@@ -1,6 +1,6 @@
 {
    "graphs": {
-     "post_disaster_rebuild": "./post_disaster_rebuild.py:post_disaster_rebuild"
+     "post_disaster_rebuild": "./post_disaster_rebuild.py:post"
    },
    "python_version": "3.13",
    "env": "./.env",
