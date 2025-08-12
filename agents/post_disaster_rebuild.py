@@ -11,6 +11,7 @@ from langchain_core.tools import tool
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+import base64
 
 #  LLM 客户端
 import llm.Client as Client
@@ -25,10 +26,10 @@ Road_llm = Client.LLMClient(api_key="token-abc123",base_url="http://localhost:88
 class PostDisasterState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
     sender: str
-    image: NotRequired[bytes]   # 灾后卫星/航拍图（带框图，给building）
-    raw_image: NotRequired[bytes]  # 灾后卫星/航拍图（原图，给 road）
+    image: bytes   # 灾后卫星/航拍图（带框图，给building）
+    raw_image: bytes  # 灾后卫星/航拍图（原图，给 road）
     counter: int  # <- 新增计数器
-    labeled_image: NotRequired[bytes]  # 可保留，也可不用
+    labeled_image: bytes # 可保留，也可不用
 
 
 #  2. 提示词的模板
@@ -88,10 +89,13 @@ def label_node(state: PostDisasterState) -> dict:
 
     finally:
         os.unlink(tmp_in_name)
+
+    b64_str = base64.b64encode(labeled_bytes).decode("utf-8")
+
     return {
         "raw_image": state["image"],  # 原图给 road
         "image": labeled_bytes,  # 带框图给 building
-        "labeled_image": labeled_bytes,  # 这里把同一份带框图写进 labeled_image
+        "labeled_image": b64_str,  # 这里把同一份带框图按64位写进 labeled_image
         "sender": "label_tool",
         "counter": state["counter"]
     }
