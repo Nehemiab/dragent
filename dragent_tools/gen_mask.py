@@ -1,6 +1,6 @@
 import requests
 import base64
-from merge_mask import blend_mask_to_image
+from dragent_tools.merge_mask import blend_mask_to_image
 
 def gen_mask(image_byte):
     with open("result.jpg", "rb") as f:

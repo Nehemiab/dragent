@@ -11,6 +11,7 @@ from langchain_core.tools import tool
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from dragent_tools.gen_mask import gen_mask as _gen_mask   # 新增蒙版
 
 #  LLM 客户端
 import llm.Client as Client
@@ -24,8 +25,9 @@ Road_llm = Client.LLMClient(api_key="token-abc123",base_url="http://localhost:88
 class TyphoonAlertState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
     sender: str  # 最后一次是谁调用了工具
-    image: NotRequired[bytes]  # 卫星图，仅 flood、building、road 节点使用
+    image: bytes  # 卫星图，仅 flood、building、road 节点使用
     counter: int  # <- 新增计数器
+    flood_blended_image: bytes  # 蒙版图
 
 
 #  2. 工具定义和工具节点
@@ -147,6 +149,10 @@ def flood_node(state: TyphoonAlertState):
         print(f"[{type(m).__name__}] {m.content}")
     print("↑↑↑↑ 以上为 flood_node 收到的消息 ↑↑↑↑")
 
+    # 2. 调用工具生成带蒙版图，但不塞进专家模型
+    mask_result = _gen_mask(state["image"])  # 返回 {'text':..., 'result':...}
+    blended_bytes = mask_result["result"]  # 合成后的图片字节
+
     # 仅在第一次进入 flood_node 时插入图片
     image_msg = _make_image_message(state["image"])
     temp_messages = concise_msgs + [image_msg]
@@ -155,7 +161,11 @@ def flood_node(state: TyphoonAlertState):
     msg = raw if isinstance(raw, AIMessage) else AIMessage(content=str(raw))
     msg.name = "flood"
     print(f"[DEBUG] flood_node 返回：{msg.content}")
-    return {"messages": [msg], "sender": "flood", "counter": state["counter"]}
+    return {"messages": [msg],
+            "sender": "flood",
+            "counter": state["counter"],
+            "flood_blended_image": blended_bytes  # 要输出蒙版图片的话，直接取出字节就可以了
+            }
 
 
 def building_node(state: TyphoonAlertState):
