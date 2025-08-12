@@ -9,10 +9,10 @@ from typing import Tuple
 # 1. 全局配置
 # ------------------------------------------------------------------
 # 输出根目录
-OUTPUT_ROOT = Path(r"C:\Users\liuyi\PycharmProjects\DRagent\agents")
+OUTPUT_ROOT = Path("../agents")
 
 # 模型权重
-MODEL_PATH = Path(r"C:\Users\liuyi\PycharmProjects\DRagent\yolov8x\best.pt")
+MODEL_PATH = Path("../yolov8x/best.pt")
 
 # ------------------------------------------------------------------
 # 2. 工具函数
@@ -69,7 +69,7 @@ def run_yolo(image_path: str) -> Tuple[Path, int]:
 # 3. 示例（仅在直接运行本脚本时执行）
 # ------------------------------------------------------------------
 if __name__ == "__main__":
-    test_img = Path(r"C:\Users\liuyi\PycharmProjects\DRagent\agents\origin.JPG")
+    test_img = Path("../origin.JPG")
     path, count = run_yolo(test_img)
     print("带框图路径:", path)
     print("损毁房屋数量:", count)

@@ -84,7 +84,7 @@ def label_node(state: PostDisasterState) -> dict:
 
         # 4. 清理临时文件（可选：也清理 YOLO 输出目录）
         import shutil
-        shutil.rmtree("F:/损毁房屋result/predict", ignore_errors=True)
+        shutil.rmtree("agents/predict", ignore_errors=True)
 
     finally:
         os.unlink(tmp_in_name)
