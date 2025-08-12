@@ -30,6 +30,7 @@ class PostDisasterState(TypedDict):
     raw_image: bytes  # 灾后卫星/航拍图（原图，给 road）
     counter: int  # <- 新增计数器
     labeled_image: bytes # 可保留，也可不用
+    query: Annotated[Sequence[BaseMessage], operator.add]  # 暂时储存analyst向building输出的问题
 
 
 #  2. 提示词的模板
@@ -139,8 +140,16 @@ def analysis_node(state: PostDisasterState):
 
 
 
+#展示64位编码图片给ui的节点
+def display_node(state: PostDisasterState):
+    concise_msgs = _extract_last_question(state["messages"])    #把前面analyst在messages里面输出给building的文本暂时放到state里面的query里面去
+    #在message里面放上b64_str
+    return {"messages": [HumanMessage(content=state["labeled_image"])], "sender": "display", "query": concise_msgs}
+
+
 def building_node(state: PostDisasterState):
-    concise_msgs = _extract_last_question(state["messages"])
+    concise_msgs = list(state.get("query", []))      #先把query里面的文本直接给到专家
+
     print("↓↓↓↓ building_node 收到的消息 ↓↓↓↓")
     for m in concise_msgs:
         print(f"[{type(m).__name__}] {m.content}")
@@ -192,7 +201,7 @@ def router(state: PostDisasterState) -> str:
             if "query to road" in content:
                 next_node = "road"
             else:
-                next_node = "building"
+                next_node = "display"
     print(f"[ROUTER] {state.get('sender')} → {next_node}")
     return next_node
 
@@ -202,18 +211,20 @@ workflow = StateGraph(PostDisasterState)
 #创建节点
 workflow.add_node("label_tool", label_node)
 workflow.add_node("analyst", analysis_node)
+workflow.add_node("display", display_node)
 workflow.add_node("building", building_node)
 workflow.add_node("road", road_node)
 
 workflow.add_edge(START, "label_tool")
 workflow.add_edge("label_tool", "analyst")
+workflow.add_edge("display", "building")
 workflow.add_edge("building", "analyst")
 workflow.add_edge("road", "analyst")
 
 workflow.add_conditional_edges(
     "analyst",
     router,
-    {"building": "building", "road": "road", "__end__": END},
+    {"display": "display", "road": "road", "__end__": END},
 )
 
 

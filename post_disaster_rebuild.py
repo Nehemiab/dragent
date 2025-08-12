@@ -142,7 +142,7 @@ def analysis_node(state: PostDisasterState):
 def display_node(state: PostDisasterState):
     concise_msgs = _extract_last_question(state["messages"])    #把前面analyst在messages里面输出给building的文本暂时放到state里面的query里面去
     #在message里面放上b64_str
-    return {"messages": [HumanMessage(content=state["labeled_image"])], "sender": "display", "query": [concise_msgs]}
+    return {"messages": [HumanMessage(content=state["labeled_image"])], "sender": "display", "query": concise_msgs}
 
 
 def building_node(state: PostDisasterState):
