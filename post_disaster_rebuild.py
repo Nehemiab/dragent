@@ -94,7 +94,7 @@ def label_node(state: PostDisasterState) -> dict:
     return {
         "raw_image": state["image"],     # 原图给 road
         "image": labeled_bytes,          # 带框图给 building
-        "labeled_image": b64_str,  # 这里把同一份带框图按64位写进 labeled_image
+        "labeled_image": labeled_bytes,
         "sender": "label_tool",
         "counter": state["counter"]
     }
@@ -142,7 +142,8 @@ def analysis_node(state: PostDisasterState):
 def display_node(state: PostDisasterState):
     concise_msgs = _extract_last_question(state["messages"])    #把前面analyst在messages里面输出给building的文本暂时放到state里面的query里面去
     #在message里面放上b64_str
-    return {"messages": [HumanMessage(content=state["labeled_image"])], "sender": "display", "query": concise_msgs}
+    b64_str = base64.b64encode(state["labeled_image"]).decode("utf-8")
+    return {"messages": [HumanMessage(content=b64_str)], "sender": "display", "query": concise_msgs}
 
 
 def building_node(state: PostDisasterState):
