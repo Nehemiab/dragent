@@ -92,7 +92,21 @@ function Interrupt({
     </>
   );
 }
+// 把 content 裡的圖片 block 轉成可直接餵給 <img> 的 src
+function extractImageSources(content: unknown): string[] {
+  if (!Array.isArray(content)) return [];
 
+  return content
+    .map((b: any) => {
+      // OpenAI / Gemini
+      if (b.type === "image_url" && b.image_url?.url) return b.image_url.url;
+      // Anthropic
+      if (b.type === "image" && b.source?.type === "base64")
+        return `data:${b.source.media_type};base64,${b.source.data}`;
+      return null;
+    })
+    .filter(Boolean) as string[];
+}
 export function AssistantMessage({
   message,
   isLoading,
@@ -108,7 +122,7 @@ export function AssistantMessage({
     "hideToolCalls",
     parseAsBoolean.withDefault(false),
   );
-
+  const imageSrcs = extractImageSources(content);
   const thread = useStreamContext();
   const isLastMessage =
     thread.messages[thread.messages.length - 1].id === message?.id;
@@ -159,7 +173,14 @@ export function AssistantMessage({
                 <MarkdownText>{contentString}</MarkdownText>
               </div>
             )}
-
+            {imageSrcs.map((src, idx) => (
+            <img
+              key={idx}
+              src={src}
+              alt={`assistant-image-${idx}`}
+              className="max-w-xs rounded-md border"
+            />
+            ))}
             {!hideToolCalls && (
               <>
                 {(hasToolCalls && toolCallsHaveContents && (

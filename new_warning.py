@@ -259,7 +259,7 @@ workflow.add_conditional_edges(
     {"tool_node": "tool_node", "flood": "flood", "building": "building", "road": "road", "__end__": END},
 )
 
-post=compile=workflow.compile(
+post=workflow.compile(
     checkpointer=AsyncSqliteSaver.from_conn_string("checkpoints.db"),
     name="new_warning"
 )

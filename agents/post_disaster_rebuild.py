@@ -69,7 +69,7 @@ def label_node(state: PostDisasterState) -> dict:
     import os
     import tempfile
     from tools.yolo_tool import run_yolo
-    state["image"] = open("origin.JPG", "rb").read()
+    state["image"] = open("../origin.JPG", "rb").read()
     state["counter"] = 0
     # 1. 把原图写临时文件
     with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_in:
@@ -236,7 +236,7 @@ async def main():
     location = '广东省梅州市'
 
     # 读入卫星云图
-    with open("origin.JPG", "rb") as f:
+    with open("../origin.JPG", "rb") as f:
         img_bytes = f.read()
 
     # 初始化对话状态

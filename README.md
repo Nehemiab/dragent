@@ -5,3 +5,11 @@ test
 - Node.js 
 - npm 
 - pnpm
+- pip install -U "langgraph-cli[inmem]"
+
+## diretory structure
+```
+root
+|--- yolov8x
+        |---best.pt
+```

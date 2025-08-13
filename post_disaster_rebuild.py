@@ -5,7 +5,7 @@ import operator
 import re
 from typing import Annotated, Sequence, TypedDict
 from typing_extensions import NotRequired
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage,ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.tools import tool
 from langgraph.graph import END, START, StateGraph
@@ -17,18 +17,18 @@ import base64
 import llm.Client as Client
 
 llm = Client.LLMClient()
-Building_llm = Client.LLMClient(api_key="token-abc123",base_url="http://localhost:8888/v1",model="lora2")
-Road_llm = Client.LLMClient(api_key="token-abc123",base_url="http://localhost:8888/v1",model="lora3")
+Building_llm = Client.LLMClient(api_key="token-abc123", base_url="http://localhost:8888/v1", model="lora2")
+Road_llm = Client.LLMClient(api_key="token-abc123", base_url="http://localhost:8888/v1", model="lora3")
 
 # 1. 状态定义
 class PostDisasterState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
     sender: str
-    image: bytes   # 灾后卫星/航拍图（带框图，给building）
+    image: bytes  # 灾后卫星/航拍图（带框图，给building）
     raw_image: bytes  # 灾后卫星/航拍图（原图，给 road）
     counter: int  # <- 新增计数器
     labeled_image: bytes  # 可保留，也可不用
-    query: Annotated[Sequence[BaseMessage], operator.add]   #暂时储存analyst向building输出的问题
+    query: Annotated[Sequence[BaseMessage], operator.add]  # 暂时储存analyst向building输出的问题
 
 
 #  2. 提示词的模板
@@ -44,16 +44,14 @@ ANALYST_PROMPTS = [
     "输出方案后，请你以 FINAL ANSWER 字样结尾，以便让流程停止。\n"
 ]
 
-
-#房屋专家
+# 房屋专家
 building_prompt = ChatPromptTemplate.from_messages([
     ("system", "你是building_analyst。一个只负责描述图中房屋分布、损毁情况的多模态大模型"),
     MessagesPlaceholder(variable_name="messages"),
 ])
 building_agent = building_prompt | Building_llm
 
-
-#道路专家
+# 道路专家
 road_prompt = ChatPromptTemplate.from_messages([
     ("system", "你是road_analyst。一个只负责描述图中道路分布、损毁情况的多模态大模型"),
     MessagesPlaceholder(variable_name="messages"),
@@ -61,14 +59,13 @@ road_prompt = ChatPromptTemplate.from_messages([
 road_agent = road_prompt | Road_llm
 
 
-
 # 2. label_node：生成带框图，并把两份图都塞进 state
 def label_node(state: PostDisasterState) -> dict:
     import os
     import tempfile
     from tools.yolo_tool import run_yolo
-    state["image"]=open("origin.JPG", "rb").read()
-    state["counter"]=0
+    state["image"] = open("origin.JPG", "rb").read()
+    state["counter"] = 0
     # 1. 把原图写临时文件
     with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_in:
         tmp_in.write(state["image"])
@@ -92,13 +89,12 @@ def label_node(state: PostDisasterState) -> dict:
     b64_str = base64.b64encode(labeled_bytes).decode("utf-8")
 
     return {
-        "raw_image": state["image"],     # 原图给 road
-        "image": labeled_bytes,          # 带框图给 building
+        "raw_image": state["image"],  # 原图给 road
+        "image": labeled_bytes,  # 带框图给 building
         "labeled_image": labeled_bytes,
         "sender": "label_tool",
         "counter": state["counter"]
     }
-
 
 
 #  3. 图片转为可传递的信息辅助函数
@@ -138,16 +134,31 @@ def analysis_node(state: PostDisasterState):
     return {"messages": [msg], "sender": "analyst", "counter": state["counter"] + 1}
 
 
-#展示64位编码图片给ui的节点
+# 展示64位编码图片给ui的节点
 def display_node(state: PostDisasterState):
-    concise_msgs = _extract_last_question(state["messages"])    #把前面analyst在messages里面输出给building的文本暂时放到state里面的query里面去
-    #在message里面放上b64_str
-    b64_str = base64.b64encode(state["labeled_image"]).decode("utf-8")
-    return {"messages": [HumanMessage(content=b64_str)], "sender": "display", "query": concise_msgs}
+    concise_msgs = _extract_last_question(state["messages"])  # 把前面analyst在messages里面输出给building的文本暂时放到state里面的query里面去
+    # 在message里面放上b64_str
+    b64= base64.b64encode(state["labeled_image"]).decode("utf-8")
+    return {"messages": [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "这是灾后的卫星/航拍图，请根据你的角色分析图中损毁信息。"},
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "mime": "image/png",
+                        "data": b64,
+                    },
+                },
+            ]
+        }
+    ], "sender": "display", "query": concise_msgs}
 
 
 def building_node(state: PostDisasterState):
-    concise_msgs = list(state.get("query", []))      #先把query里面的文本直接给到专家
+    concise_msgs = list(state.get("query", []))  # 先把query里面的文本直接给到专家
 
     print("↓↓↓↓ building_node 收到的消息 ↓↓↓↓")
     for m in concise_msgs:
@@ -182,6 +193,7 @@ def road_node(state: PostDisasterState):
     print(f"[DEBUG] road_node 返回：{msg.content}")
     return {"messages": [msg], "sender": "road", "counter": state["counter"]}
 
+
 #  6. 条件路由
 def router(state: PostDisasterState) -> str:
     if state["counter"] >= 3:
@@ -189,7 +201,6 @@ def router(state: PostDisasterState) -> str:
         return "__end__"
 
     last_msg = state["messages"][-1]
-
 
     if "FINAL ANSWER" in str(last_msg.content):
         next_node = "__end__"
@@ -207,7 +218,7 @@ def router(state: PostDisasterState) -> str:
 
 #  7. 构建图
 workflow = StateGraph(PostDisasterState)
-#创建节点
+# 创建节点
 workflow.add_node("label_tool", label_node)
 workflow.add_node("analyst", analysis_node)
 workflow.add_node("display", display_node)
@@ -226,13 +237,10 @@ workflow.add_conditional_edges(
     {"display": "display", "road": "road", "__end__": END},
 )
 
-
-post=compile=workflow.compile(
+post = workflow.compile(
     checkpointer=AsyncSqliteSaver.from_conn_string("checkpoints.db"),
     name="post_disaster_rebuild"
 )
-
-
 
 # 9. 异步运行入口以及检查点文件输出
 '''
@@ -255,12 +263,12 @@ async def main():
     # 运行工作流
     async with AsyncSqliteSaver.from_conn_string("checkpoints.db") as memory:
         graph = workflow.compile(checkpointer=memory,name="post_disaster_rebuild")
-        
+
         try:
             graph.get_graph().draw_mermaid_png(output_file_path="./post_disaster_rebuild.png")
         except Exception as e:
             print(e)
-        
+
         final_state = await graph.ainvoke(
             initial,
             {"configurable": {"thread_id": "thread-damage-1"},"recursion_limit": 20},

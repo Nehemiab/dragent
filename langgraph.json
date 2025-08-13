@@ -1,8 +1,8 @@
 {
    "graphs": {
-     "post_disaster_rebuild": "./new_warning.py:post"
+     "post_disaster_rebuild":"./post_disaster_rebuild.py:post"
    },
-   "python_version": "3.13",
+   "python_version": "3.12",
    "env": "./.env",
    "dependencies": ["./"]
 }
