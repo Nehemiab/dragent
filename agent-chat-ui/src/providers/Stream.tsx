@@ -169,7 +169,7 @@ export const StreamProvider: React.FC<{ children: ReactNode }> = ({
             <div className="flex flex-col items-start gap-2">
               <LangGraphLogoSVG className="h-7" />
               <h1 className="text-xl font-semibold tracking-tight">
-                Agent Chat
+                多模态台风应急减灾智能体
               </h1>
             </div>
             <p className="text-muted-foreground">

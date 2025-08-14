@@ -364,7 +364,7 @@ export function Thread() {
                     height={32}
                   />
                   <span className="text-xl font-semibold tracking-tight">
-                    Agent Chat
+                    多模态台风应急减灾智能体
                   </span>
                 </motion.button>
               </div>
@@ -447,7 +447,7 @@ export function Thread() {
                     <div className="flex items-center gap-3">
                       <LangGraphLogoSVG className="h-8 flex-shrink-0" />
                       <h1 className="text-2xl font-semibold tracking-tight">
-                        Agent Chat
+                        多模态台风应急减灾智能体
                       </h1>
                     </div>
                   )}
@@ -488,7 +488,7 @@ export function Thread() {
                             form?.requestSubmit();
                           }
                         }}
-                        placeholder="Type your message..."
+                        placeholder="请输入文本"
                         className="field-sizing-content resize-none border-none bg-transparent p-3.5 pb-0 shadow-none ring-0 outline-none focus:ring-0 focus:outline-none"
                       />
 
@@ -504,7 +504,7 @@ export function Thread() {
                               htmlFor="render-tool-calls"
                               className="text-sm text-gray-600"
                             >
-                              Hide Tool Calls
+                              隐藏工具调用
                             </Label>
                           </div>
                         </div>
@@ -514,7 +514,7 @@ export function Thread() {
                         >
                           <Plus className="size-5 text-gray-600" />
                           <span className="text-sm text-gray-600">
-                            Upload PDF or Image
+                            上传PDF或图片
                           </span>
                         </Label>
                         <input
@@ -532,7 +532,7 @@ export function Thread() {
                             className="ml-auto"
                           >
                             <LoaderCircle className="h-4 w-4 animate-spin" />
-                            Cancel
+                            取消
                           </Button>
                         ) : (
                           <Button
@@ -543,7 +543,7 @@ export function Thread() {
                               (!input.trim() && contentBlocks.length === 0)
                             }
                           >
-                            Send
+                            发送
                           </Button>
                         )}
                       </div>
