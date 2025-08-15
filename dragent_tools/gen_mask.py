@@ -2,13 +2,13 @@ import requests
 import base64
 from dragent_tools.merge_mask import blend_mask_to_image
 
-def gen_mask(image_byte):
+def gen_mask_test(image_byte):
     with open("result.jpg", "rb") as f:
         image_bytes = f.read()
     return {'text': '识别出水体', 'result': image_bytes}
 
 
-def gen_mask_pending(image_byte, server_url="http://localhost:9000/analyze"):
+def gen_mask(image_byte, server_url="http://localhost:9000/analyze"):
     """
     用法:
     res = gen_mask(image_bytes)
@@ -43,5 +43,5 @@ if __name__ == "__main__":
     with open("origin.JPG", "rb") as f:
         image_bytes = f.read()
     res=gen_mask(image_bytes)
-    mask_b64 = res["mask_base64"]
+    mask_b64 = res["result"]
     print("minicpm文本输出:", res["text"])

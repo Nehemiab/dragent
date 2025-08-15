@@ -17,7 +17,7 @@ class LLMClient:
         base_url: str | None = None,
         model: str | None = None,
         *,
-        config_path: str = "../config.yaml",
+        config_path: str = "config.yaml",
         **chat_kwargs,
     ) -> None:
 

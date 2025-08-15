@@ -64,7 +64,7 @@ def label_node(state: PostDisasterState) -> dict:
     import os
     import tempfile
     from tools.yolo_tool import run_yolo
-    state["image"] = open("origin.JPG", "rb").read()
+    state["image"] = open("data/img/origin.jpg", "rb").read()
     state["counter"] = 0
     # 1. 把原图写临时文件
     with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_in:

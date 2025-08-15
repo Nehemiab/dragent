@@ -57,8 +57,8 @@ def label_draw(image_path, label_path, output_path, class_names=None):
 # 示例用法
 if __name__ == "__main__":
     image_path = "../agents/origin.JPG"  # 输入图像路径
-    label_path = "labels.txt"      # YOLO 标签文件路径
-    output_path = "output.jpg"     # 输出图像路径
+    label_path = "../labels.txt"      # YOLO 标签文件路径
+    output_path = "../data/img/output.jpg"  # 输出图像路径
     #class_names = ["class0", "class1", "class2"]  # 类别名称列表，可选
 
     label_draw(image_path, label_path, output_path) #class_names)

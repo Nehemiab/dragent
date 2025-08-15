@@ -69,7 +69,7 @@ def run_yolo(image_path: str) -> Tuple[Path, int]:
 # 3. 示例（仅在直接运行本脚本时执行）
 # ------------------------------------------------------------------
 if __name__ == "__main__":
-    test_img = Path("../origin.JPG")
+    test_img = Path("../data/img/origin.jpg")
     path, count = run_yolo(test_img)
     print("带框图路径:", path)
     print("损毁房屋数量:", count)
