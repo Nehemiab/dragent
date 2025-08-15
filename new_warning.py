@@ -57,7 +57,7 @@ def typhoon_api(
 
 
 # 预置工具节点
-#tool_node = ToolNode([typhoon_api])
+tool_node = ToolNode([typhoon_api])
 
 
 #  3. 图片转为可传递的信息辅助函数
@@ -79,7 +79,7 @@ def _make_image_message(image_bytes: bytes) -> HumanMessage:
 # 台风分析代理（主脑）
 # 2. 分阶段提示词列表
 ANALYST_PROMPTS = [
-    #"你是我的台风灾害预警分析专家，请你严格按照我的步骤一步一步来执行。现在，请你请你先使用工具typhoon_api查询台风数据。",
+    "请你严格按照我的步骤一步一步来执行。现在，请你请你先使用工具typhoon_api查询台风数据。",
     "你的助手flood是多模态大模型，可以回答图中水体位置以及水体周边的情况，我会给他一个当地卫星图。现在,请不要调用工具，不要生成toolcall，请你在输出内容的最后一行输出纯文本问题，按照以下格式向flood询问图中相应细节,请记得加单引号：\n"
     "```query to flood：'向flood询问的问题'```",
     "你的助手building是多模态大模型，可以回答图中房屋分布、建筑密度、脆弱性、损毁程度等情况，我会给他一个当地卫星图。现在,不要生成toolcall,请你在输出内容的最后一行输出纯文本问题，向building询问图中相应细节。严格按照以下格式输出：\n"
@@ -150,7 +150,7 @@ def analysis_node(state: TyphoonAlertState):
         ("system", ANALYST_PROMPTS[idx]),
         MessagesPlaceholder(variable_name="messages"),
     ])
-    model = prompt | llm #.bind_tools([typhoon_api])
+    model = prompt | llm .bind_tools([typhoon_api])
     raw = model.invoke({k: v for k, v in state.items() if k != 'image'})
     msg = raw if isinstance(raw, AIMessage) else AIMessage(content=str(raw))
     msg.name = "analyst"
@@ -277,9 +277,9 @@ def router(state: TyphoonAlertState) -> str:
         sender = state.get("sender", "analyst")
         if sender == "analyst":
             content = str(last_msg.content).lower()
-            if state["counter"]==2:
+            if state["counter"]==3:
                 next_node = "display"
-            elif state["counter"]==3:
+            elif state["counter"]==4:
                 next_node = "road"
             else:
                 next_node = "mask"
@@ -297,11 +297,11 @@ workflow.add_node("flood", flood_node)
 workflow.add_node("display", display_node)
 workflow.add_node("building", building_node)
 workflow.add_node("road", road_node)
-#workflow.add_node("tool_node", tool_node)
+workflow.add_node("tool_node", tool_node)
 
 workflow.add_edge(START, "initial")
 workflow.add_edge("initial", "analyst")
-#workflow.add_edge("tool_node", "analyst")
+workflow.add_edge("tool_node", "analyst")
 workflow.add_edge("display", "building")
 workflow.add_edge("mask", "flood")
 workflow.add_edge("flood", "analyst")
@@ -311,7 +311,7 @@ workflow.add_edge("road", "analyst")
 workflow.add_conditional_edges(
     "analyst",
     router,
-    {"display":"display", "mask": "mask", "road": "road", "__end__": END},#"tool_node": "tool_node",
+    {"display":"display", "tool_node": "tool_node","mask": "mask", "road": "road", "__end__": END},
 )
 
 post = workflow.compile(
