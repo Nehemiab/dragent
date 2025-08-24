@@ -5,8 +5,8 @@
 **一个能够并行处理多源数据形成完整信息链，适应不同任务场景，提供快速，精准的应急方案的多模态智能体。**
 
  <a>🤖</a> | 
-[🍳 演示文档](./) |
-[📄 材料报告](./) 
+[🍳 演示文档](./多模态台风应急减灾智能体.pptx) |
+[📄 材料报告](./材料文档.pdf) 
 
 
 ---
@@ -40,18 +40,24 @@ pnpm install
 3.启动专家智能体服务
 ```bash
 #显卡服务器上运行
-conda activate minicpmo
-vllm serve MiniCPM-o-2_6  --dtype auto --max-model-len 2048 --api-key token-abc123 --gpu_memory_utilization 0.9 --trust-remote-code --enable-lora  --lora-modules lora1=sft_water lora2=sft_housing lora3=sft_road
+#vllm==0.9.2 python3.10
+#实验使用环境是代码目录 之外 的envs中的env1
+cd MLLM/
+vllm serve model  --dtype auto --max-model-len 2048 --api-key token-abc123 --gpu_memory_utilization 0.9 --trust-remote-code --enable-lora  --lora-modules lora1=sft_water lora2=sft_housing lora3=sft_road
 #端口号8000
 ```
-4.启动mask-rcnn服务
+4.启动mask-rcnn服务(可选，需修改dragent_tool/gen_mask.py中的接口)
 ```bash
 #显卡服务器上运行
+#环境要求：detectron2==0.6(git本地编译安装）, opencv-python==4.12.0.88 ,requests== 2.32.4,uvicorn==0.35.0,fastapi==0.116.1,python3.10
+#实验使用环境是代码目录 之外 的envs中的env1
+cd MLLM/
 python gen_maskrcnn_service.py
 #端口号9000
 ```
 3.启动langgraph服务
 ```
+#环境要求：代码目录下的.ui虚拟环境
 在./langgraph.json中修改graph为所需的智能体
 #e.g.:"typhoon_disaster_agent":"./pre_disaster.py:pre"
 #     "typhoon_disaster_agent":"./during_disaster.py:during"
